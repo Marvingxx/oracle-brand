@@ -164,6 +164,20 @@ pub fn logos(app: &mut App, ui: &mut egui::Ui) {
     let dir = p.dir.clone();
     let states: Vec<SourceState> = p.data.assets.iter().map(|a| p.source_state(a)).collect();
     let paths: Vec<PathBuf> = p.data.assets.iter().map(|a| p.resolve(&a.source)).collect();
+    // The Mockup Studio scenes using each logo, and whether their render is out of date.
+    let scenes: Vec<_> = oracle_brand::mockup::scenes(p).into_iter().filter_map(|(_, _, s)| s.ok()).map(|s| (oracle_brand::mockup::scene_state(p, &s, &[]), s)).collect();
+    let mockups: Vec<Vec<(String, bool)>> = p
+        .data
+        .assets
+        .iter()
+        .map(|a| {
+            scenes
+                .iter()
+                .filter(|(_, s)| s.fills.iter().any(|f| matches!(&f.content, oracle_brand::mockup::Content::BrandAsset { asset_id, .. } if *asset_id == a.id)))
+                .map(|(st, s)| (s.name.clone(), !matches!(st, oracle_brand::mockup::SceneState::UpToDate)))
+                .collect()
+        })
+        .collect();
     for (row, chunk) in p.data.assets.chunks_mut(cols).enumerate() {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
@@ -212,6 +226,12 @@ pub fn logos(app: &mut App, ui: &mut egui::Ui) {
                         };
                         ui.label(RichText::new(format!("● {}", st.label_fr())).color(color).size(12.0));
                         ui.label(RichText::new(&a.source).color(t.muted).size(11.0)).on_hover_text(paths[i].display().to_string());
+                        if !mockups[i].is_empty() {
+                            let outdated = mockups[i].iter().filter(|(_, o)| *o).count();
+                            let names = mockups[i].iter().map(|(n, o)| if *o { format!("{n} (à mettre à jour)") } else { n.clone() }).collect::<Vec<_>>().join(", ");
+                            let text = RichText::new(format!("Mockups : {names}")).size(11.5).color(if outdated > 0 { t.warn } else { t.muted });
+                            ui.label(text).on_hover_text("Scènes de Mockup Studio qui utilisent ce logo. Mettez-les à jour dans Mockup Studio.");
+                        }
                         ui.horizontal(|ui| {
                             if ui.small_button("Montrer").clicked() {
                                 reveal(&paths[i]);

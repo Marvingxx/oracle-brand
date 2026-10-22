@@ -18,9 +18,11 @@ pub enum Thumb {
     Failed(String),
 }
 
+type Loaded = (Key, Result<image::RgbaImage, String>);
+
 pub struct Thumbs {
     map: HashMap<Key, Thumb>,
-    tx: Sender<(PathBuf, Sender<(Key, Result<image::RgbaImage, String>)>)>,
+    tx: Sender<(PathBuf, Sender<Loaded>)>,
     results_tx: Sender<(Key, Result<image::RgbaImage, String>)>,
     results: Receiver<(Key, Result<image::RgbaImage, String>)>,
 }

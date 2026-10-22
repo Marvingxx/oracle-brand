@@ -9,6 +9,15 @@
 //! oracle-brand plan DIR [--assets id,id] [--presets id,id]
 //! oracle-brand export DIR [--assets id,id] [--presets id,id] [--changed]
 //! oracle-brand deliver DIR FOLDER
+//!
+//! oracle-brand mockup-demo-photo OUT_DIR                      (photo et masque de synthèse)
+//! oracle-brand template-new TEMPLATES_DIR PHOTO "Nom"
+//! oracle-brand template-zone TEMPLATE ZONE --corners x,y;x,y;x,y;x,y [--ratio 85:55] [--name …] [--blend multiply] [--opacity 1]
+//! oracle-brand template-occlusion TEMPLATE FILE
+//! oracle-brand scene-new DIR TEMPLATE "Nom"
+//! oracle-brand scene-fill DIR SCENE ZONE (--asset ID | --file PATH | --none) [--background COLOR_ID|#RRGGBB] [--fit contain|cover|stretch] [--scale 0.8] [--rotation 0] [--offset x,y]
+//! oracle-brand scenes DIR [--templates DIR]
+//! oracle-brand render DIR [--scenes a.json,b.json] [--outdated] [--templates DIR]
 //! ```
 
 use std::path::PathBuf;
@@ -16,6 +25,7 @@ use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
 
 use oracle_brand::export;
+use oracle_brand::mockup::{self, Content, Paint, Scene, SceneState, Template};
 use oracle_brand::model::{Asset, BrandColor, BrandFont, Role, Variant, parse_hex};
 use oracle_brand::project::{Project, SourceState};
 use oracle_brand::render::Engines;
@@ -48,7 +58,7 @@ fn variant(s: &str) -> Result<Variant, String> {
 }
 
 fn run(args: &[String]) -> Result<(), String> {
-    let usage = "usage : oracle-brand new|add-logo|add-color|add-font|status|plan|export|deliver DIR …";
+    let usage = "usage : oracle-brand new|add-logo|add-color|add-font|status|plan|export|deliver|template-new|template-zone|template-occlusion|scene-new|scene-fill|scenes|render DIR …";
     let cmd = args.first().ok_or(usage)?;
     let dir = PathBuf::from(args.get(1).ok_or(usage)?);
     match cmd.as_str() {
@@ -142,6 +152,139 @@ fn run(args: &[String]) -> Result<(), String> {
             d.delivered = true;
             p.save()?;
             println!("{folder} marquée livrée : elle ne sera plus réécrite");
+        }
+        "mockup-demo-photo" => {
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let (photo, pen) = oracle_brand::mockup_demo::business_card();
+            photo.save(dir.join("carte-oblique.png")).map_err(|e| e.to_string())?;
+            pen.save(dir.join("stylo-premier-plan.png")).map_err(|e| e.to_string())?;
+            let c = oracle_brand::mockup_demo::CARD;
+            println!("{}", c.iter().map(|[x, y]| format!("{x},{y}")).collect::<Vec<_>>().join(";"));
+        }
+        "template-new" => {
+            let photo = PathBuf::from(args.get(2).ok_or("photo manquante")?);
+            let name = args.get(3).cloned().unwrap_or_default();
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            println!("{}", mockup::create_template(&dir, &photo, &name)?.display());
+        }
+        "template-zone" => {
+            let (file, mut t) = Template::load(&dir)?;
+            let zone_id = args.get(2).ok_or("zone manquante")?.clone();
+            if !t.zones.iter().any(|z| z.id == zone_id) {
+                t.zones.push(mockup::Zone::new(&zone_id, &zone_id));
+            }
+            let z = t.zones.iter_mut().find(|z| z.id == zone_id).ok_or("zone introuvable")?;
+            if let Some(c) = flag(args, "--corners") {
+                let pts: Vec<f64> = c.split([';', ',']).map(|v| v.trim().parse::<f64>().map_err(|_| format!("coordonnée invalide : {v}"))).collect::<Result<_, _>>()?;
+                if pts.len() != 8 {
+                    return Err("--corners attend 4 points x,y séparés par ;".into());
+                }
+                z.corners = [[pts[0], pts[1]], [pts[2], pts[3]], [pts[4], pts[5]], [pts[6], pts[7]]];
+                oracle_brand::composite::zone_homography(&z.corners, 1.0)?;
+            }
+            if let Some(r) = flag(args, "--ratio") {
+                let (w, h) = r.split_once(':').ok_or("--ratio attend L:H")?;
+                z.ratio = [w.trim().parse().map_err(|_| "ratio invalide")?, h.trim().parse().map_err(|_| "ratio invalide")?];
+            }
+            if let Some(n) = flag(args, "--name") {
+                z.name = n;
+            }
+            if let Some(b) = flag(args, "--blend") {
+                z.blend = serde_json::from_value(serde_json::Value::String(b.clone())).map_err(|_| format!("mode inconnu : {b} (normal, multiply, screen)"))?;
+            }
+            if let Some(o) = flag(args, "--opacity") {
+                z.opacity = o.parse().map_err(|_| "opacité invalide")?;
+            }
+            t.save(file.parent().ok_or("dossier du modèle")?)?;
+            println!("{zone_id}");
+        }
+        "template-occlusion" => {
+            let (file, mut t) = Template::load(&dir)?;
+            let tdir = file.parent().ok_or("dossier du modèle")?;
+            let mask = PathBuf::from(args.get(2).ok_or("masque manquant")?);
+            t.occlusion = Some(mockup::adopt_file(tdir, &mask, "premier-plan")?);
+            t.save(tdir)?;
+        }
+        "scene-new" => {
+            let mut p = Project::open(&dir)?;
+            let template = PathBuf::from(args.get(2).ok_or("modèle manquant")?);
+            let template = std::path::absolute(&template).map_err(|e| e.to_string())?;
+            println!("{}", mockup::create_scene(&mut p, &template, args.get(3).map(String::as_str).unwrap_or(""))?.display());
+        }
+        "scene-fill" => {
+            let p = Project::open(&dir)?;
+            let scene_file = PathBuf::from(args.get(2).ok_or("scène manquante")?);
+            let zone = args.get(3).ok_or("zone manquante")?;
+            let mut scene = Scene::load(&scene_file)?;
+            let fill = scene.fill_mut(zone);
+            if let Some(id) = flag(args, "--asset") {
+                let a = p.data.assets.iter().find(|a| a.id == id).ok_or_else(|| format!("pas de logo {id}"))?;
+                fill.content = Content::BrandAsset { asset_id: a.id.clone(), role: a.role, variant: a.variant };
+            } else if let Some(f) = flag(args, "--file") {
+                fill.content = Content::File { path: p.store_path(&std::path::absolute(PathBuf::from(f)).map_err(|e| e.to_string())?) };
+            } else if args.iter().any(|a| a == "--none") {
+                fill.content = Content::None;
+            }
+            if let Some(b) = flag(args, "--background") {
+                fill.background = if b.starts_with('#') {
+                    parse_hex(&b).ok_or_else(|| format!("{b} : #RRGGBB attendu"))?;
+                    Some(Paint::Hex { hex: b.to_uppercase() })
+                } else {
+                    let index = p.data.colors.iter().position(|c| c.id == b).ok_or_else(|| format!("pas de couleur {b}"))?;
+                    Some(Paint::BrandColor { color_id: b, index })
+                };
+            }
+            if let Some(f) = flag(args, "--fit") {
+                fill.fit = serde_json::from_value(serde_json::Value::String(f.clone())).map_err(|_| format!("ajustement inconnu : {f} (contain, cover, stretch)"))?;
+            }
+            if let Some(v) = flag(args, "--scale") {
+                fill.scale = v.parse().map_err(|_| "échelle invalide")?;
+            }
+            if let Some(v) = flag(args, "--rotation") {
+                fill.rotation = v.parse().map_err(|_| "rotation invalide")?;
+            }
+            if let Some(v) = flag(args, "--offset") {
+                let (x, y) = v.split_once(',').ok_or("--offset attend x,y")?;
+                fill.offset = [x.trim().parse().map_err(|_| "décalage invalide")?, y.trim().parse().map_err(|_| "décalage invalide")?];
+            }
+            scene.save(&scene_file)?;
+        }
+        "scenes" => {
+            let p = Project::open(&dir)?;
+            let roots: Vec<PathBuf> = flag(args, "--templates").map(PathBuf::from).into_iter().collect();
+            for (stored, _, s) in mockup::scenes(&p) {
+                match s {
+                    Ok(s) => println!("  {:<28} {}", s.name, mockup::scene_state(&p, &s, &roots).label_fr()),
+                    Err(e) => println!("  {stored:<28} {e}"),
+                }
+            }
+        }
+        "render" => {
+            let p = Project::open(&dir)?;
+            let roots: Vec<PathBuf> = flag(args, "--templates").map(PathBuf::from).into_iter().collect();
+            let only = ids(args, "--scenes");
+            let outdated = args.iter().any(|a| a == "--outdated");
+            let engines = Engines::discover();
+            let mut failures = 0;
+            for (stored, file, s) in mockup::scenes(&p) {
+                let name = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                if !only.is_empty() && !only.iter().any(|o| o == &name || o == &stored) {
+                    continue;
+                }
+                if outdated && s.as_ref().is_ok_and(|s| mockup::scene_state(&p, s, &roots) == SceneState::UpToDate) {
+                    continue;
+                }
+                match mockup::export_scene(&p, &file, &engines, &roots) {
+                    Ok(out) => println!("  {}", out.display()),
+                    Err(e) => {
+                        failures += 1;
+                        println!("  ÉCHEC {name} — {e}");
+                    }
+                }
+            }
+            if failures > 0 {
+                return Err(format!("{failures} échec(s)"));
+            }
         }
         _ => return Err(usage.into()),
     }

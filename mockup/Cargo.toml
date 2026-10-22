@@ -1,0 +1,29 @@
+[package]
+name = "oracle-mockup-studio"
+description = "Oracle Mockup Studio: a brand's logos laid into photographed supports, strictly 2D, nothing generated."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "oracle-mockup-studio"
+path = "src/main.rs"
+
+[dependencies]
+oracle-brand = { workspace = true }
+oracle-style = { workspace = true }
+oracle-library-ui = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+rfd = "0.17"
+dirs = "6"
+
+[build-dependencies]
+winresource = "0.1"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }

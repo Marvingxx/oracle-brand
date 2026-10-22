@@ -1901,6 +1901,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
+name = "num-complex"
+version = "0.4.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ce2d95d4b3734dc35aa2f45e1aa22cd416814592a4f9d9205e11affd5b8e10b"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2270,6 +2288,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "log",
+ "oracle-edit-algo",
  "resvg",
  "serde",
  "serde_json",
@@ -2289,10 +2308,105 @@ dependencies = [
  "image",
  "log",
  "oracle-brand",
+ "oracle-style",
  "rfd",
  "serde",
  "serde_json",
  "winresource",
+]
+
+[[package]]
+name = "oracle-edit-algo"
+version = "0.12.0"
+dependencies = [
+ "oracle-edit-color",
+ "oracle-edit-geom",
+ "oracle-edit-raster",
+ "rayon",
+ "rustfft",
+ "serde",
+]
+
+[[package]]
+name = "oracle-edit-cms"
+version = "0.12.0"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
+name = "oracle-edit-color"
+version = "0.12.0"
+dependencies = [
+ "oracle-edit-cms",
+ "serde",
+]
+
+[[package]]
+name = "oracle-edit-geom"
+version = "0.12.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "oracle-edit-raster"
+version = "0.12.0"
+dependencies = [
+ "oracle-edit-color",
+ "oracle-edit-geom",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "oracle-library"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "log",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "oracle-library-ui"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "image",
+ "log",
+ "oracle-library",
+ "resvg",
+ "rfd",
+]
+
+[[package]]
+name = "oracle-mockup-studio"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "image",
+ "log",
+ "oracle-brand",
+ "oracle-library-ui",
+ "oracle-style",
+ "rfd",
+ "serde",
+ "serde_json",
+ "winresource",
+]
+
+[[package]]
+name = "oracle-style"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "serde",
 ]
 
 [[package]]
@@ -2553,6 +2667,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
+name = "primal-check"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc0d895b311e3af9902528fbb8f928688abbd95872819320517cc24ca6b2bd08"
+dependencies = [
+ "num-integer",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2794,6 +2917,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
 dependencies = [
  "semver",
+]
+
+[[package]]
+name = "rustfft"
+version = "6.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21db5f9893e91f41798c88680037dba611ca6674703c1a18601b01a72c8adb89"
+dependencies = [
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "primal-check",
+ "strength_reduce",
+ "transpose",
 ]
 
 [[package]]
@@ -3125,6 +3262,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "strength_reduce"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
+
+[[package]]
 name = "strict-num"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3366,6 +3509,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "transpose"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
+dependencies = [
+ "num-integer",
+ "strength_reduce",
+]
+
+[[package]]
 name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3429,6 +3582,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-properties"

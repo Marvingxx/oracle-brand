@@ -1,5 +1,5 @@
-//! Oracle's look: the A structure (hairlines, square layout), Lexend, a 4 px rounding, the brand
-//! red, light and dark.
+//! Oracle's look for the brand apps: the A structure (hairlines, square layout), Lexend, a 4 px
+//! rounding, the brand red, light and dark. Shared by Brand Kit and Mockup Studio.
 
 use std::sync::Arc;
 
@@ -91,6 +91,10 @@ pub fn apply(ctx: &egui::Context, choice: ThemeChoice) {
         s.text_styles.insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
         s.text_styles.insert(TextStyle::Button, FontId::new(13.5, FontFamily::Name("medium".into())));
         s.text_styles.insert(TextStyle::Small, FontId::new(11.5, FontFamily::Proportional));
+        s.spacing.slider_width = 120.0;
+        s.spacing.slider_rail_height = 4.0;
+        s.visuals.slider_trailing_fill = true;
+        s.visuals.handle_shape = egui::style::HandleShape::Circle;
     });
 }
 

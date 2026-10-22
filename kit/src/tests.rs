@@ -67,12 +67,12 @@ fn pages_light_and_dark_then_export() {
         let mut h = harness(theme, &dir);
         settle(&mut h, 60);
         assert_eq!(h.get_all_by_label_contains("Jamais exporté").count(), 2);
-        h.snapshot(&format!("logos_{suffix}"));
+        h.snapshot(format!("logos_{suffix}"));
         for (tab, name, expect) in [(Tab::Colors, "colors", "RVB 200 32 41"), (Tab::Export, "export", "vers Livrables/Marque Exemple/v1"), (Tab::Presets, "presets", "Avatar")] {
             h.state_mut().tab = tab;
             settle(&mut h, 8);
             h.get_by_label_contains(expect);
-            h.snapshot(&format!("{name}_{suffix}"));
+            h.snapshot(format!("{name}_{suffix}"));
         }
         snapshots.extend_harness(&mut h);
     }

@@ -5,7 +5,7 @@
 #![windows_subsystem = "windows"]
 
 mod pages;
-mod theme;
+use oracle_style as theme;
 mod thumbs;
 #[cfg(test)]
 mod tests;
@@ -78,6 +78,10 @@ struct Settings {
 }
 
 fn settings_path() -> Option<PathBuf> {
+    // Tests never touch the user's own settings.
+    if cfg!(test) {
+        return None;
+    }
     dirs::config_dir().map(|d| d.join("Oracle").join("brand-kit.json"))
 }
 

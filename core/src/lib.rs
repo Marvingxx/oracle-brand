@@ -4,12 +4,17 @@
 //! - [`project`]: opening, migrating and saving a project; source change detection.
 //! - [`render`]: drawing a master with Oracle's engines, then sizing, margins, background, density.
 //! - [`export`]: planning and making client deliveries, with `manifest.json` and `README.txt`.
+//! - [`mockup`]: Mockup Studio's templates and scenes; [`composite`] draws them.
 //!
 //! Nothing here creates design: every logo, variant, colour and rule comes from the designer.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod composite;
 pub mod export;
+pub mod mockup;
+pub mod mockup_demo;
 pub mod model;
 pub mod presets;
 pub mod project;

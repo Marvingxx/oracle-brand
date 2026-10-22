@@ -1,0 +1,10 @@
+[package]
+name = "oracle-style"
+description = "Oracle's look for the brand apps (Brand Kit, Mockup Studio): Lexend, light and dark, 4 px rounding, the brand red."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+egui = { workspace = true }
+serde = { workspace = true }
