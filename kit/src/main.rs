@@ -115,6 +115,8 @@ pub struct App {
     pub plan_presets: Vec<String>,
     /// Deliver the Mockup Studio renders too.
     pub plan_mockups: bool,
+    /// Files the planned export takes over unchanged from the last delivery: (folder, count).
+    pub plan_carry: Option<(String, usize)>,
     pub running: Option<Running>,
     pub last_results: Vec<OutputResult>,
     pub last_folder: Option<PathBuf>,
@@ -139,6 +141,7 @@ impl App {
             plan_assets: Vec::new(),
             plan_presets: Vec::new(),
             plan_mockups: true,
+            plan_carry: None,
             running: None,
             last_results: Vec::new(),
             last_folder: None,

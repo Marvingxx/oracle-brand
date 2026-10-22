@@ -191,6 +191,14 @@ pub fn run(
     for r in &results {
         merged.insert(r.path.clone(), r.clone());
     }
+    // A regeneration after a delivery: the unchanged files come along, so the folder is complete.
+    if !cancelled {
+        let made: std::collections::BTreeSet<String> = merged.keys().cloned().collect();
+        for r in complete_from_delivered(project, plan, &root, &made, false) {
+            merged.insert(r.path.clone(), r.clone());
+            results.push(r);
+        }
+    }
     let all: Vec<OutputResult> = merged.into_values().collect();
     let made_ids: Vec<String> = results.iter().filter(|r| r.error.is_none()).map(|r| r.asset_id.clone()).collect();
     project.record_hashes(&made_ids);
@@ -206,6 +214,85 @@ pub fn run(
         None => project.data.deliveries.push(Delivery { folder: plan.folder.clone(), created_at: crate::now_rfc3339(), delivered: false, outputs: made }),
     }
     Report { folder: root, results, cancelled }
+}
+
+/// A new folder made after a delivery holds a complete set: each file of the last delivered
+/// folder that this run didn't make is copied from it byte for byte (checked against that
+/// folder's manifest), when what it was made from hasn't changed since: its master's hash as
+/// recorded then, or, for a mockup, the same render. Anything changed and not regenerated stays
+/// out rather than going out stale.
+fn complete_from_delivered(project: &Project, plan: &Plan, root: &Path, made: &std::collections::BTreeSet<String>, dry_run: bool) -> Vec<OutputResult> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Source {
+        id: String,
+        sha256: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Prev {
+        #[serde(default)]
+        sources: Vec<Source>,
+    }
+    let Some(prev) = project.data.deliveries.iter().rev().find(|d| d.delivered && d.folder != plan.folder) else { return Vec::new() };
+    let prev_root = project.deliveries_root().join(&prev.folder);
+    let manifest = prev_root.join("manifest.json");
+    let sources: Vec<Source> = std::fs::read(&manifest).ok().and_then(|b| serde_json::from_slice::<Prev>(&b).ok()).map(|p| p.sources).unwrap_or_default();
+    let renders: BTreeMap<String, PathBuf> = crate::mockup::scenes(project)
+        .into_iter()
+        .filter_map(|(_, _, s)| s.ok())
+        .filter_map(|s| s.last_render.map(|r| (s.id, project.resolve(&r.file))))
+        .collect();
+    let mut out = Vec::new();
+    for old in read_manifest_results(&manifest) {
+        let Some(sha) = old.sha256.clone().filter(|_| old.error.is_none()) else { continue };
+        if made.contains(&old.path) {
+            continue;
+        }
+        let unchanged = if old.preset_id == MOCKUP_PRESET {
+            renders.get(&old.asset_id).and_then(|r| hash_file(r).ok()).as_deref() == Some(sha.as_str())
+        } else {
+            let then = sources.iter().find(|s| s.id == old.asset_id).and_then(|s| s.sha256.clone());
+            let now = project.data.assets.iter().find(|a| a.id == old.asset_id).and_then(|a| hash_file(&project.resolve(&a.source)).ok());
+            then.is_some() && then == now
+        };
+        if !unchanged {
+            continue;
+        }
+        if dry_run {
+            out.push(old);
+            continue;
+        }
+        let from = crate::project::resolve_with(&prev_root, &old.path);
+        let to = crate::project::resolve_with(root, &old.path);
+        let mut r = old.clone();
+        let copied = std::fs::read(&from).map_err(|e| format!("{} : {e}", from.display())).and_then(|bytes| {
+            if hash_file(&from).ok().as_deref() != Some(sha.as_str()) {
+                return Err(format!("{} ne correspond plus au manifeste de {} : non repris", old.path, prev.folder));
+            }
+            if let Some(dir) = to.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+            }
+            write_atomic(&to, &bytes)
+        });
+        if let Err(e) = copied {
+            r.error = Some(e);
+            r.sha256 = None;
+        }
+        out.push(r);
+    }
+    out
+}
+
+/// What an export of `plan` would take over unchanged from the last delivered folder (its name
+/// and the files), shown with the plan before anything is written.
+pub fn carried_over(project: &Project, plan: &Plan) -> Option<(String, Vec<String>)> {
+    let prev = project.data.deliveries.iter().rev().find(|d| d.delivered && d.folder != plan.folder)?;
+    let root = project.deliveries_root().join(&plan.folder);
+    let mut made: std::collections::BTreeSet<String> = plan.outputs.iter().map(|o| o.path.clone()).collect();
+    made.extend(read_manifest_results(&root.join("manifest.json")).into_iter().map(|r| r.path));
+    let files: Vec<String> = complete_from_delivered(project, plan, &root, &made, true).into_iter().map(|r| r.path).collect();
+    (!files.is_empty()).then(|| (prev.folder.clone(), files))
 }
 
 fn make_one(project: &Project, engines: &Engines, root: &Path, out: &PlannedOutput) -> OutputResult {

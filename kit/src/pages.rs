@@ -714,6 +714,7 @@ pub fn export(app: &mut App, ui: &mut egui::Ui) {
         if app.plan_mockups {
             export::plan_mockups(p, &mut plan, &mockup_template_roots(p));
         }
+        app.plan_carry = export::carried_over(p, &plan).map(|(folder, files)| (folder, files.len()));
         app.plan = Some(plan);
     }
     let Some(plan) = app.plan.clone() else { return };
@@ -741,6 +742,9 @@ pub fn export(app: &mut App, ui: &mut egui::Ui) {
     });
     if delivered_last {
         ui.label(RichText::new("La livraison précédente a été envoyée au client : elle ne sera pas modifiée. Cet export va dans un nouveau dossier.").color(t.muted).size(12.0));
+        if let Some((folder, n)) = &app.plan_carry {
+            ui.label(RichText::new(format!("+ {n} fichier(s) inchangé(s) repris de {folder} à l'identique : le nouveau dossier est complet.")).color(t.muted).size(12.0));
+        }
     } else if reuses_draft {
         ui.label(RichText::new("Ce dossier n'a pas encore été livré : les fichiers du même nom seront remplacés, les autres conservés.").color(t.muted).size(12.0));
     }

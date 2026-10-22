@@ -125,6 +125,17 @@ fn client_pack_then_revision() {
     assert_eq!(oracle_brand::project::hash_file(&root.join("Logos/SVG/Marque-Été_logo-principal_couleur.svg")).unwrap(), v1_svg_hash, "v1 untouched");
     let v2 = std::fs::read_to_string(p.deliveries_root().join("v1-2/Logos/SVG/Marque-Été_logo-principal_couleur.svg")).unwrap();
     assert!(v2.contains("#2E86AB"));
+    // v1-2 is a complete set: the symbol's files, unchanged, come from v1 byte for byte.
+    let v12 = p.deliveries_root().join("v1-2");
+    let v12_manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(v12.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(v12_manifest["outputs"].as_array().unwrap().len(), outputs.len(), "as many files as v1");
+    let symbol = p.data.assets.iter().find(|a| a.role == oracle_brand::Role::Symbol).unwrap().id.clone();
+    let copied: Vec<&serde_json::Value> = v12_manifest["outputs"].as_array().unwrap().iter().filter(|o| o["assetId"] == symbol.as_str()).collect();
+    assert!(!copied.is_empty());
+    for o in copied {
+        let path = o["path"].as_str().unwrap();
+        assert_eq!(oracle_brand::project::hash_file(&v12.join(path)).unwrap(), oracle_brand::project::hash_file(&root.join(path)).unwrap(), "{path}");
+    }
     assert!(p.data.assets.iter().all(|a| p.source_state(a) == SourceState::Unchanged));
 }
 
