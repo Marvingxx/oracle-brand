@@ -15,6 +15,9 @@ use crate::model::{Asset, Delivery, ExportPreset, Format};
 use crate::project::{Project, SourceState, hash_file, safe_name};
 use crate::render::{self, Engines};
 
+/// The preset id of a delivered Mockup Studio render (its `asset_id` is the scene's id).
+pub const MOCKUP_PRESET: &str = "mockup";
+
 /// One file the delivery will hold.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlannedOutput {
@@ -140,6 +143,25 @@ pub fn plan(project: &Project, asset_ids: &[String], preset_ids: &[String]) -> P
     Plan { folder, outputs }
 }
 
+/// Adds the Mockup Studio renders of the project's scenes to a plan, as `Mockups/<file>`: copied
+/// byte for byte as rendered. A scene never rendered, or whose render is out of date (a logo, a
+/// mask or a setting changed since), is listed as blocked with the reason: never delivered stale.
+pub fn plan_mockups(project: &Project, plan: &mut Plan, template_roots: &[PathBuf]) {
+    use crate::mockup::{SceneState, scene_state, scenes};
+    for (_, _, s) in scenes(project) {
+        let Ok(scene) = s else { continue };
+        let file = scene.last_render.as_ref().and_then(|r| Path::new(&r.file).file_name().map(|n| n.to_string_lossy().to_string()));
+        let name = file.unwrap_or_else(|| format!("{}.{}", safe_name(&scene.name), scene.output.format.ext()));
+        let blocked = match scene_state(project, &scene, template_roots) {
+            SceneState::UpToDate => None,
+            SceneState::NeverRendered => Some("scène jamais rendue dans Mockup Studio".to_string()),
+            SceneState::Outdated(why) => Some(format!("rendu à mettre à jour dans Mockup Studio ({})", why.join(", "))),
+            SceneState::Broken(e) => Some(e),
+        };
+        plan.outputs.push(PlannedOutput { asset_id: scene.id, preset_id: MOCKUP_PRESET.into(), path: format!("Mockups/{name}"), format: scene.output.format, blocked });
+    }
+}
+
 /// Makes the planned files. `only` limits the run to some paths (a retry of failures); `progress`
 /// is called after each file with (done, total, path). Setting `cancel` stops after the current file.
 pub fn run(
@@ -199,6 +221,33 @@ fn make_one(project: &Project, engines: &Engines, root: &Path, out: &PlannedOutp
     };
     if let Some(b) = &out.blocked {
         r.error = Some(b.clone());
+        return r;
+    }
+    if out.preset_id == MOCKUP_PRESET {
+        let render = crate::mockup::scenes(project)
+            .into_iter()
+            .filter_map(|(_, _, s)| s.ok())
+            .find(|s| s.id == out.asset_id)
+            .and_then(|s| s.last_render.map(|rec| project.resolve(&rec.file)));
+        let dest = crate::project::resolve_with(root, &out.path);
+        let copied = render.ok_or_else(|| "scène ou rendu introuvable".to_string()).and_then(|src| {
+            let bytes = std::fs::read(&src).map_err(|e| format!("{} : {e}", src.display()))?;
+            if let Some(dir) = dest.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| format!("{} : {e}", dir.display()))?;
+            }
+            write_atomic(&dest, &bytes)
+        });
+        match copied {
+            Ok(()) => {
+                if let Ok((w, h)) = image::image_dimensions(&dest) {
+                    r.width = Some(w);
+                    r.height = Some(h);
+                }
+                r.bytes = std::fs::metadata(&dest).ok().map(|m| m.len());
+                r.sha256 = hash_file(&dest).ok();
+            }
+            Err(e) => r.error = Some(e),
+        }
         return r;
     }
     let (Some(asset), Some(preset)) = (project.data.assets.iter().find(|a| a.id == out.asset_id), project.data.export_presets.iter().find(|p| p.id == out.preset_id))

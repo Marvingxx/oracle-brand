@@ -7,7 +7,7 @@
 //! oracle-brand add-font DIR "Famille" "Usage"
 //! oracle-brand status DIR
 //! oracle-brand plan DIR [--assets id,id] [--presets id,id]
-//! oracle-brand export DIR [--assets id,id] [--presets id,id] [--changed]
+//! oracle-brand export DIR [--assets id,id] [--presets id,id] [--changed] [--mockups [--templates DIR]]
 //! oracle-brand deliver DIR FOLDER
 //!
 //! oracle-brand mockup-demo-photo OUT_DIR                      (photo et masque de synthèse)
@@ -132,7 +132,11 @@ fn run(args: &[String]) -> Result<(), String> {
                     return Ok(());
                 }
             }
-            let pl = export::plan(&p, &assets, &ids(args, "--presets"));
+            let mut pl = export::plan(&p, &assets, &ids(args, "--presets"));
+            if args.iter().any(|a| a == "--mockups") {
+                let roots: Vec<PathBuf> = flag(args, "--templates").map(PathBuf::from).into_iter().collect();
+                export::plan_mockups(&p, &mut pl, &roots);
+            }
             let engines = Engines::discover();
             let report = export::run(&mut p, &engines, &pl, None, &AtomicBool::new(false), |done, total, path| eprintln!("[{done}/{total}] {path}"));
             p.save()?;

@@ -65,6 +65,7 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
     let zone_index = app.zone;
     let mut changed = false;
     let mut edit_template = None;
+    let mut copy_to: Option<std::path::PathBuf> = None;
     let mut render = None;
     let state = match &app.mode {
         Mode::Scene { file, .. } => app.states.get(file).cloned(),
@@ -100,6 +101,9 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
             edit_template = Some((template_file.clone(), file.clone()));
         }
     });
+    if ui.small_button("Copier vers une autre marque…").on_hover_text("La même mise en situation pour un autre projet de marque : ses logos sont retrouvés par rôle, ses couleurs par position").clicked() {
+        copy_to = Some(file.clone());
+    }
 
     ui.add_space(10.0);
     theme::label(ui, "Zone");
@@ -274,6 +278,10 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
     }
     if changed {
         app.touch();
+    }
+    if let Some(scene_file) = copy_to {
+        app.save_now();
+        copy_scene_to_brand(app, &scene_file);
     }
     if let Some((tf, back)) = edit_template {
         app.open_template(&tf, Some(back));
@@ -522,5 +530,21 @@ fn template(app: &mut App, ui: &mut egui::Ui) {
         app.save_now();
         app.reload_templates();
         app.open_scene(&b);
+    }
+}
+
+/// Copies a scene into another brand project the designer picks.
+fn copy_scene_to_brand(app: &mut App, scene_file: &Path) {
+    let Some(from) = app.project.clone() else { return };
+    let Some(dir) = rfd::FileDialog::new().set_title("Projet de marque de destination (dossier contenant brand.json)").pick_folder() else { return };
+    let result = oracle_brand::Project::open(&dir).and_then(|mut to| {
+        if to.data.project_id == from.data.project_id {
+            return Err("c'est le même projet de marque".into());
+        }
+        mockup::copy_scene_to(scene_file, &from, &mut to).map(|path| (to.data.brand_name.clone(), path))
+    });
+    match result {
+        Ok((brand, path)) => app.say(format!("Scène copiée dans « {brand} » : {}. Ouvrez ce projet pour la rendre.", path.display()), false),
+        Err(e) => app.say(format!("Copie impossible : {e}"), true),
     }
 }

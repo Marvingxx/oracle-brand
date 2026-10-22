@@ -638,6 +638,16 @@ fn opt_u32(ui: &mut egui::Ui, hint: &str, v: &mut Option<u32>) -> bool {
 
 // ---------------------------------------------------------------- Export
 
+/// Where Mockup Studio keeps templates (its setting, else its default), and the project's own.
+fn mockup_template_roots(p: &oracle_brand::Project) -> Vec<PathBuf> {
+    let configured = dirs::config_dir()
+        .and_then(|d| std::fs::read(d.join("Oracle").join("mockup-studio.json")).ok())
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.get("templates_root").and_then(|r| r.as_str()).filter(|r| !r.is_empty()).map(PathBuf::from));
+    let default = dirs::document_dir().map(|d| d.join("Oracle").join("Modèles de mockups"));
+    configured.or(default).into_iter().chain(std::iter::once(p.dir.join("Modèles"))).collect()
+}
+
 pub fn export(app: &mut App, ui: &mut egui::Ui) {
     heading(ui, "Export", "Choisissez les logos et les presets, vérifiez la liste, puis lancez. Les fichiers maîtres ne sont jamais modifiés.");
     let t = theme::tokens(ui.ctx());
@@ -692,8 +702,19 @@ pub fn export(app: &mut App, ui: &mut egui::Ui) {
             }
         }
     });
+    let scenes = oracle_brand::mockup::scenes(p).len();
+    if scenes > 0 {
+        ui.add_space(6.0);
+        if ui.checkbox(&mut app.plan_mockups, format!("Mockups de Mockup Studio ({scenes} scène(s), rendus à jour seulement)")).changed() {
+            replan = true;
+        }
+    }
     if replan {
-        app.plan = Some(export::plan(p, &app.plan_assets, &app.plan_presets));
+        let mut plan = export::plan(p, &app.plan_assets, &app.plan_presets);
+        if app.plan_mockups {
+            export::plan_mockups(p, &mut plan, &mockup_template_roots(p));
+        }
+        app.plan = Some(plan);
     }
     let Some(plan) = app.plan.clone() else { return };
     ui.add_space(14.0);

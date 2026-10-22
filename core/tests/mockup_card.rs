@@ -271,3 +271,37 @@ fn copy_dir(from: &Path, to: &Path) {
         }
     }
 }
+
+/// The client delivery carries the mockup renders: an up-to-date render is copied as it is into
+/// `Mockups/`, listed in the manifest; an out-of-date one is held back with the reason.
+#[test]
+fn deliveries_carry_up_to_date_mockups_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut p, tfile) = setup(tmp.path());
+    let engines = Engines::discover();
+    let scene_file = mockup::create_scene(&mut p, &tfile, "Carte de visite").unwrap();
+    let mut scene = Scene::load(&scene_file).unwrap();
+    let a = p.data.assets[0].clone();
+    scene.fill_mut("zone-1").content = Content::BrandAsset { asset_id: a.id, role: a.role, variant: a.variant };
+    scene.save(&scene_file).unwrap();
+    let render = mockup::export_scene(&p, &scene_file, &engines, &[]).unwrap();
+
+    let mut plan = oracle_brand::export::plan(&p, &[], &["png-1x".into()]);
+    oracle_brand::export::plan_mockups(&p, &mut plan, &[]);
+    let m = plan.outputs.iter().find(|o| o.preset_id == oracle_brand::export::MOCKUP_PRESET).unwrap();
+    assert_eq!(m.path, "Mockups/Carte de visite.png");
+    assert!(m.blocked.is_none(), "{:?}", m.blocked);
+    let report = oracle_brand::export::run(&mut p, &engines, &plan, None, &std::sync::atomic::AtomicBool::new(false), |_, _, _| {});
+    assert_eq!(report.failures().count(), 0, "{:?}", report.results);
+    let delivered = report.folder.join("Mockups/Carte de visite.png");
+    assert_eq!(hash_file(&delivered).unwrap(), hash_file(&render).unwrap(), "copied as rendered");
+    let manifest = std::fs::read_to_string(report.folder.join("manifest.json")).unwrap();
+    assert!(manifest.contains("Mockups/Carte de visite.png"));
+
+    // The logo changes: the render is out of date and is not delivered.
+    std::fs::write(p.dir.join("Sources/logo principal.svg"), logo(RED, GREEN)).unwrap();
+    let mut plan = oracle_brand::export::plan(&p, &[], &["png-1x".into()]);
+    oracle_brand::export::plan_mockups(&p, &mut plan, &[]);
+    let m = plan.outputs.iter().find(|o| o.preset_id == oracle_brand::export::MOCKUP_PRESET).unwrap();
+    assert!(m.blocked.as_deref().is_some_and(|b| b.contains("à mettre à jour") && b.contains("Logo principal")), "{:?}", m.blocked);
+}

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSI for one Oracle brand app (WiX Toolset v5 with the UI and Util extensions). Built by
+  package.ps1 for Oracle Brand Kit and Oracle Mockup Studio:
+
+    wix build app.wxs -arch x64 -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext
+      -d ProductName="Oracle Brand Kit" -d AppId=oracle-brand-kit -d UpgradeCode=…
+      -d MainGuid=… -d DesktopGuid=… -d CliExe=oracle-brand.exe (optional)
+      -d Version=0.1.0 -d BinDir=… -d IconPath=… -d DocsDir=… -d BannerBmp=… -d DialogBmp=… -o out.msi
+
+  Per-machine install in Program Files\<ProductName> (remembered for upgrades), a Start Menu and a
+  desktop shortcut, an App Paths entry, and an uninstall entry by "Oracle" that Oracle Suite reads.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+      Name="$(var.ProductName)"
+      Manufacturer="Oracle"
+      Version="$(var.Version)"
+      UpgradeCode="$(var.UpgradeCode)"
+      Scope="perMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="$(var.ProductName)" Manufacturer="Oracle" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of $(var.ProductName) is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Marvingxx" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Property Id="INSTALLFOLDER">
+      <RegistrySearch Id="PreviousInstallFolder" Root="HKLM" Key="Software\$(var.ProductName)" Name="InstallDir" Type="raw" />
+    </Property>
+
+    <Feature Id="Main" Title="$(var.ProductName)" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="Documentation" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <!-- WixUI_InstallDir without the licence page: the code is MIT OR Apache-2.0. -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2" Condition="NOT Installed" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApp" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+    </UI>
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.BannerBmp)" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.DialogBmp)" />
+
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="$(var.ProductName) $(var.Version) is installed." />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch $(var.ProductName)" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="[#MainExe]" />
+    <CustomAction Id="LaunchApp" BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="Documentation" Directory="INSTALLFOLDER">
+      <Files Include="$(var.DocsDir)\**" />
+    </ComponentGroup>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="MainApp" Guid="$(var.MainGuid)">
+        <File Id="MainExe" Source="$(var.BinDir)\$(var.AppId).exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="$(var.ProductName)"
+              Description="$(var.ProductName)" WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="AppIcon.ico" IconIndex="0" />
+        </File>
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\$(var.AppId).exe" Value="[#MainExe]" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\$(var.ProductName)" Name="InstallDir" Value="[INSTALLFOLDER]" Type="string" />
+      </Component>
+      <?ifdef CliExe ?>
+      <Component Id="Cli">
+        <File Id="CliExe" Source="$(var.BinDir)\$(var.CliExe)" KeyPath="yes" />
+      </Component>
+      <?endif?>
+    </ComponentGroup>
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="$(var.DesktopGuid)">
+      <Shortcut Id="DesktopShortcut" Name="$(var.ProductName)" Description="$(var.ProductName)"
+          Target="[#MainExe]" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.ico" IconIndex="0" />
+      <RegistryValue Root="HKLM" Key="Software\$(var.ProductName)" Name="DesktopShortcut" Value="1" Type="integer" KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

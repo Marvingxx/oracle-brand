@@ -113,6 +113,8 @@ pub struct App {
     pub plan: Option<Plan>,
     pub plan_assets: Vec<String>,
     pub plan_presets: Vec<String>,
+    /// Deliver the Mockup Studio renders too.
+    pub plan_mockups: bool,
     pub running: Option<Running>,
     pub last_results: Vec<OutputResult>,
     pub last_folder: Option<PathBuf>,
@@ -136,6 +138,7 @@ impl App {
             plan: None,
             plan_assets: Vec::new(),
             plan_presets: Vec::new(),
+            plan_mockups: true,
             running: None,
             last_results: Vec::new(),
             last_folder: None,
