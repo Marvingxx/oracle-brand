@@ -23,6 +23,33 @@ pub mod render;
 pub use model::{Asset, BrandProject, Format, Role, Variant};
 pub use project::{Project, SourceState};
 
+/// The folder of the apps' local logs: `%LOCALAPPDATA%/Oracle/logs` on Windows,
+/// `~/.local/state/oracle/logs` elsewhere.
+pub fn log_dir() -> Option<std::path::PathBuf> {
+    if let Some(d) = std::env::var_os("LOCALAPPDATA") {
+        return Some(std::path::PathBuf::from(d).join("Oracle").join("logs"));
+    }
+    std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local").join("state").join("oracle").join("logs"))
+}
+
+/// Appends one line to `<log_dir>/<app>.log` (UTC time, level, message). The file is started
+/// afresh past 1 MB (the previous one kept as `.old.log`). Never fails the caller: a log that
+/// can't be written is skipped.
+pub fn log_line(app: &str, level: &str, message: &str) {
+    use std::io::Write;
+    let Some(dir) = log_dir() else { return };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let file = dir.join(format!("{app}.log"));
+    if std::fs::metadata(&file).is_ok_and(|m| m.len() > 1 << 20) {
+        let _ = std::fs::rename(&file, dir.join(format!("{app}.old.log")));
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
+        let _ = writeln!(f, "{} {level} {}", now_rfc3339(), message.replace(['\r', '\n'], " "));
+    }
+}
+
 /// Now, as RFC 3339 in UTC (`2026-10-22T14:03:09Z`), without a date library.
 pub fn now_rfc3339() -> String {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);

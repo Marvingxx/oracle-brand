@@ -137,7 +137,9 @@ impl App {
     }
 
     pub fn say(&mut self, text: impl Into<String>, error: bool) {
-        self.status = Some((text.into(), error, Instant::now()));
+        let text = text.into();
+        oracle_brand::log_line("mockup-studio", if error { "ERREUR" } else { "info" }, &text);
+        self.status = Some((text, error, Instant::now()));
     }
 
     pub fn templates_root(&self) -> PathBuf {
