@@ -570,6 +570,9 @@ impl eframe::App for App {
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        // Files dropped on the library window go into the library; assets dragged out of it arrive
+        // as dropped files.
+        self.library.claim_drops(raw_input, None);
         self.library.inject_drops(raw_input);
     }
 
