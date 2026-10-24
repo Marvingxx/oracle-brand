@@ -1,6 +1,6 @@
 //! Turning a master file into one deliverable. Oracle's own engines do the drawing:
 //! `oracle-vector-cli` for vector masters (SVG, AI, PDF, EPS, `.oracle-vector`…), `oracle-edit-cli`
-//! for PSD and `.pcraft`; plain PNG/JPEG/WebP/TIFF masters are read directly. This module adds what
+//! for PSD and `.oracle-edit` (or `.pcraft`); plain PNG/JPEG/WebP/TIFF masters are read directly. This module adds what
 //! a delivery needs on top: exact sizes, margins, a background, the pixel density, and atomic writes
 //! that never leave a half-written file in place of a good one.
 
@@ -18,7 +18,7 @@ const VECTOR_EXT: &[&str] = &["svg", "svgz", "ai", "ait", "pdf", "eps", "epsf", 
 /// Masters read directly.
 const RASTER_EXT: &[&str] = &["png", "jpg", "jpeg", "webp", "tif", "tiff", "gif", "bmp"];
 /// Masters Oracle Edit converts first.
-const EDIT_EXT: &[&str] = &["psd", "psb", "pcraft"];
+const EDIT_EXT: &[&str] = &["psd", "psb", "oracle-edit", "pcraft"];
 /// Largest raster output side, so a typo in a preset can't ask for gigapixels.
 pub const MAX_SIDE: u32 = 20_000;
 

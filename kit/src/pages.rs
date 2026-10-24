@@ -134,7 +134,7 @@ pub fn logos(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         if theme::primary(ui, "Ajouter des fichiers maîtres…").clicked()
             && let Some(files) = rfd::FileDialog::new()
-                .add_filter("Logos", &["svg", "pdf", "ai", "eps", "oracle-vector", "png", "jpg", "jpeg", "webp", "tif", "tiff", "psd", "pcraft"])
+                .add_filter("Logos", &["svg", "pdf", "ai", "eps", "oracle-vector", "png", "jpg", "jpeg", "webp", "tif", "tiff", "psd", "oracle-edit", "pcraft"])
                 .pick_files()
         {
             add_masters(app, files);
