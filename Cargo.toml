@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "style", "kit", "mockup"]
+members = ["core", "style", "kit", "mockup", "oracle-assets", "oracle-font"]
 
 [workspace.package]
 version = "0.3.0"

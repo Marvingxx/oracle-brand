@@ -6,6 +6,8 @@
   Produces, in dist/release:
     oracle-brand-kit-<version>-windows-x64.msi       Brand Kit + the oracle-brand CLI
     oracle-mockup-studio-<version>-windows-x64.msi   Mockup Studio
+    oracle-assets-<version>-windows-x64.msi          Oracle Assets (the library as an app)
+    oracle-font-<version>-windows-x64.msi            Oracle Font (fonts and type tests)
   The binaries link the C runtime statically. Needs Rust (MSVC) and WiX v5 with the UI and Util
   extensions (see oracle-vector/packaging/windows/package.ps1).
 
@@ -37,7 +39,7 @@ New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
 if (-not $SkipBuild) {
   [Environment]::SetEnvironmentVariable('CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS', '-C target-feature=+crt-static')
-  Invoke-Native "cargo build ($Target)" { cargo build --release -p oracle-brand-kit -p oracle-mockup-studio -p oracle-brand --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --release -p oracle-brand-kit -p oracle-mockup-studio -p oracle-assets -p oracle-font -p oracle-brand --target $Target }
 }
 $Bin = Join-Path $TargetDir "$Target\release"
 
@@ -76,7 +78,11 @@ $Apps = @(
   @{ Id = 'oracle-brand-kit'; Name = 'Oracle Brand Kit'; Dir = 'kit'; Icon = 'brand-kit'; Cli = 'oracle-brand.exe'
      Upgrade = '560E04C1-AEF8-4D39-8935-334C3BDE375D'; Main = '69B68C93-F2C3-492A-8D47-79EE79C3BB18'; Desktop = '190A190C-807F-40D3-AAE2-7E0376064284' },
   @{ Id = 'oracle-mockup-studio'; Name = 'Oracle Mockup Studio'; Dir = 'mockup'; Icon = 'mockup-studio'; Cli = $null
-     Upgrade = '79D984EA-F2D8-4600-BB2E-F2339DC70978'; Main = 'E368B8E2-6C6F-4C49-B4A5-3298B3A45E09'; Desktop = '21D167D0-009C-4B26-BC41-44AD315B8C4D' }
+     Upgrade = '79D984EA-F2D8-4600-BB2E-F2339DC70978'; Main = 'E368B8E2-6C6F-4C49-B4A5-3298B3A45E09'; Desktop = '21D167D0-009C-4B26-BC41-44AD315B8C4D' },
+  @{ Id = 'oracle-assets'; Name = 'Oracle Assets'; Dir = 'oracle-assets'; Icon = 'oracle-assets'; Cli = $null
+     Upgrade = '2B0EFE68-AD91-47E2-A18A-A898ACD2E0B3'; Main = '7CF77FD3-FF48-4DF5-8BA3-9DEB78BA2113'; Desktop = '554D0437-046A-4F4C-B521-A4C81F451A94' },
+  @{ Id = 'oracle-font'; Name = 'Oracle Font'; Dir = 'oracle-font'; Icon = 'oracle-font'; Cli = $null
+     Upgrade = 'FD52EB49-E7B0-42DD-B7AF-BA32499376B1'; Main = '867FA9F2-C25C-4BB7-A0F3-BF7AF8364112'; Desktop = '5B94359F-6996-4ED6-A483-4BFEBC355939' }
 )
 foreach ($a in $Apps) {
   $Stage = Join-Path $TargetDir "windows-package\$($a.Id)"

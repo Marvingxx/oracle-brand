@@ -1,0 +1,30 @@
+[package]
+name = "oracle-font"
+description = "Oracle Font: every font at hand, tried out before use (specimens, glyphs, pairings, brand colours), activated, added to the library or given to a brand."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "oracle-font"
+path = "src/main.rs"
+
+[dependencies]
+oracle-brand = { workspace = true }
+oracle-style = { workspace = true }
+oracle-library = { path = "../../oracle-library/core" }
+oracle-suite-link = { workspace = true }
+egui = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dirs = "6"
+ttf-parser = "0.25"
+
+# Activating a font for the user: its entry in the user's font registry key.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[build-dependencies]
+winresource = "0.1"

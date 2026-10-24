@@ -1,10 +1,16 @@
-# Oracle Brand Kit et Mockup Studio
+# Oracle Brand Kit, Mockup Studio, Assets et Font
 
 **Brand Kit** : la source de vérité d'une identité de marque — logos rangés par rôle, palette,
 typographies, règles d'usage — et la fabrication des fichiers à livrer au client.
 **Mockup Studio** : les logos de la marque posés sur des photos de supports (quatre coins, masques,
 premier plan, surcouches), strictement 2D. Local, sans compte, sans IA : chaque logo, variante,
 couleur, photo et masque vient du designer ; exports et rendus ne tournent que sur demande.
+
+**Oracle Assets** : la Bibliothèque Oracle comme logiciel à part entière (sections, marques, favoris,
+tags, recherche), à glisser vers n'importe quel logiciel. **Oracle Font** : toutes les polices (système,
+Bibliothèque, marques) essayées avant usage — cascade, paragraphe, glyphes, comparaison, paires, texte
+sur les couleurs d'une marque, axes variables — activées sans droits administrateur, ajoutées à la
+Bibliothèque ou à une marque.
 
 ## Contenu
 
@@ -14,6 +20,8 @@ couleur, photo et masque vient du designer ; exports et rendus ne tournent que s
 | `style/` (`oracle-style`) | la DA commune (Lexend, clair/sombre, arrondi 4 px, rouge Oracle) |
 | `kit/` (`oracle-brand-kit`) | l'application Brand Kit |
 | `mockup/` (`oracle-mockup-studio`) | l'application Mockup Studio |
+| `oracle-assets/` (`oracle-assets`) | Oracle Assets, la Bibliothèque comme logiciel |
+| `oracle-font/` (`oracle-font`) | Oracle Font, les polices et les tests typographiques |
 
 ## Commandes
 
