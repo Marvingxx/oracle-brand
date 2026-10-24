@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 oracle-brand = { path = "core" }
 oracle-style = { path = "style" }
 oracle-library-ui = { path = "../oracle-library/ui" }
+oracle-suite-link = { path = "../oracle-library/link" }
 oracle-edit-algo = { path = "../oracle-edit/crates/algo" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

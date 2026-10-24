@@ -194,6 +194,10 @@ impl App {
                 self.checked.clear();
                 self.states.clear();
                 self.states_at = None;
+                // Its logos, colours and type show in the library and the other apps.
+                if !cfg!(test) {
+                    oracle_suite_link::brands::register(&dir);
+                }
                 let s = dir.display().to_string();
                 self.settings.recent.retain(|r| r != &s);
                 self.settings.recent.insert(0, s);

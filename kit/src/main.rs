@@ -122,6 +122,8 @@ pub struct App {
     pub last_folder: Option<PathBuf>,
     // Start page.
     new_name: String,
+    /// The Oracle Library window: its assets dropped on the window become logos.
+    pub library: oracle_library_ui::InAppLibrary,
 }
 
 impl App {
@@ -146,6 +148,7 @@ impl App {
             last_results: Vec::new(),
             last_folder: None,
             new_name: String::new(),
+            library: oracle_library_ui::InAppLibrary::new("oracle-brand-kit"),
         };
         if let Some(p) = start {
             app.open(&p);
@@ -186,6 +189,10 @@ impl App {
     }
 
     fn remember(&mut self, dir: &std::path::Path) {
+        // Its logos, colours and type show in the library and the other Oracle apps.
+        if !cfg!(test) {
+            oracle_suite_link::brands::register(dir);
+        }
         let s = dir.display().to_string();
         self.settings.recent.retain(|r| r != &s);
         self.settings.recent.insert(0, s);
@@ -327,6 +334,9 @@ impl App {
                         self.save_now();
                         self.project = None;
                     }
+                    if ui.selectable_label(self.library.open, "Bibliothèque").on_hover_text("La Bibliothèque Oracle : glissez un logo sur la fenêtre pour l'ajouter à la marque").clicked() {
+                        self.library.toggle();
+                    }
                 });
             });
             let r = ui.max_rect();
@@ -380,6 +390,7 @@ impl App {
                 Tab::Deliveries => pages::deliveries(self, ui),
             });
         });
+        self.library.ui(&ctx, true);
     }
 
 }
@@ -387,6 +398,13 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
+    }
+
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        // Files dropped on the library window go into the library; assets dragged out of it arrive
+        // as dropped files (logos).
+        self.library.claim_drops(raw_input, None);
+        self.library.inject_drops(raw_input);
     }
 
     fn on_exit(&mut self) {

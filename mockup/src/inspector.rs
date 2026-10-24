@@ -67,6 +67,7 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
     let mut edit_template = None;
     let mut copy_to: Option<std::path::PathBuf> = None;
     let mut render = None;
+    let mut to_library = None;
     let state = match &app.mode {
         Mode::Scene { file, .. } => app.states.get(file).cloned(),
         _ => None,
@@ -81,6 +82,9 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
         }
         if render_path.is_file() && ui.button("Ouvrir le rendu").clicked() {
             let _ = std::process::Command::new("explorer").arg(&render_path).spawn();
+        }
+        if render_path.is_file() && ui.button("Ajouter à la Bibliothèque").on_hover_text("Une copie du rendu dans « Mes créations » de la Bibliothèque Oracle").clicked() {
+            to_library = Some(render_path.clone());
         }
     });
     let color = match &state {
@@ -288,6 +292,9 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
     }
     if let Some(f) = render {
         app.render(vec![f]);
+    }
+    if let Some(f) = to_library {
+        app.library.add_files(&[f]);
     }
 }
 
