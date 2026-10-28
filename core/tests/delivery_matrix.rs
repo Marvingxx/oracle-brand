@@ -57,6 +57,10 @@ fn every_treatment_is_filed_by_logo_treatment_and_format() {
         assert!(guide.contains(t.label_fr()), "{t:?}");
     }
     assert!(guide.contains("Orbe_logo-principal_niveaux-de-gris_3000px.png"));
+    // The brand's design tokens travel with every delivery.
+    let tokens: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join("orbe.tokens.json")).unwrap()).unwrap();
+    assert!(tokens["$description"].as_str().unwrap().starts_with("Orbe"));
+    assert!(guide.contains("orbe.tokens.json"));
 }
 
 #[test]

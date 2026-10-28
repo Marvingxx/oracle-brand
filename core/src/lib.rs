@@ -20,6 +20,8 @@ pub mod model;
 pub mod presets;
 pub mod project;
 pub mod recolor;
+pub mod tokens;
+pub mod vectorize;
 pub mod render;
 pub mod studio;
 

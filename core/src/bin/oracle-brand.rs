@@ -62,7 +62,7 @@ fn variant(s: &str) -> Result<Variant, String> {
 }
 
 fn run(args: &[String]) -> Result<(), String> {
-    let usage = "usage : oracle-brand new|add-logo|add-color|add-font|status|plan|export|deliver|guide-check|guide-export|studio-export|hub-export|template-new|template-zone|template-occlusion|scene-new|scene-fill|scenes|render DIR …";
+    let usage = "usage : oracle-brand new|add-logo|add-color|add-font|status|plan|export|deliver|guide-check|guide-export|studio-export|hub-export|vectorize|tokens|template-new|template-zone|template-occlusion|scene-new|scene-fill|scenes|render DIR …";
     let cmd = args.first().ok_or(usage)?;
     let dir = PathBuf::from(args.get(1).ok_or(usage)?);
     match cmd.as_str() {
@@ -131,6 +131,25 @@ fn run(args: &[String]) -> Result<(), String> {
         "hub-export" => {
             let p = Project::open(&dir)?;
             println!("{}", oracle_brand::guide::export_hub(&p, &Engines::discover(), args.iter().any(|s| s == "--draft"))?.display());
+        }
+        "vectorize" => {
+            // oracle-brand vectorize DIR ASSET_ID [--detailed]
+            let mut p = Project::open(&dir)?;
+            let asset = args.get(2).ok_or("identifiant du logo manquant (oracle-brand status les liste)")?;
+            let detail = if args.iter().any(|a| a == "--detailed") { oracle_brand::vectorize::Detail::Detailed } else { oracle_brand::vectorize::Detail::Logo };
+            let id = oracle_brand::vectorize::vectorize(&mut p, asset, detail)?;
+            p.save()?;
+            let a = p.data.assets.iter().find(|a| a.id == id).ok_or("logo créé introuvable")?;
+            println!("{id} {}", a.source);
+        }
+        "tokens" => {
+            // oracle-brand tokens DIR [-o FILE]: the W3C design tokens, to stdout or a file.
+            let p = Project::open(&dir)?;
+            let json = serde_json::to_string_pretty(&oracle_brand::tokens::tokens(&p.data)).map_err(|e| e.to_string())?;
+            match flag(args, "-o") {
+                Some(out) => std::fs::write(&out, json).map_err(|e| format!("{out} : {e}"))?,
+                None => println!("{json}"),
+            }
         }
         "status" => {
             let p = Project::open(&dir)?;

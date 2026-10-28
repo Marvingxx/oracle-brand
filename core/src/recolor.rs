@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::Variant;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum Treatment {
     /// The master as drawn.
@@ -25,7 +27,13 @@ pub enum Treatment {
 }
 
 impl Treatment {
-    pub const ALL: [Treatment; 5] = [Treatment::Original, Treatment::Inverted, Treatment::Black, Treatment::White, Treatment::Greyscale];
+    pub const ALL: [Treatment; 5] = [
+        Treatment::Original,
+        Treatment::Inverted,
+        Treatment::Black,
+        Treatment::White,
+        Treatment::Greyscale,
+    ];
 
     pub fn is_original(&self) -> bool {
         *self == Treatment::Original
@@ -88,7 +96,9 @@ impl Treatment {
             }
             Treatment::White => [255, 255, 255],
             Treatment::Greyscale => {
-                let y = (0.2126 * f64::from(r) + 0.7152 * f64::from(g) + 0.0722 * f64::from(b)).round().clamp(0.0, 255.0) as u8;
+                let y = (0.2126 * f64::from(r) + 0.7152 * f64::from(g) + 0.0722 * f64::from(b))
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
                 [y, y, y]
             }
             // Only the near-blacks (ink, text): a saturated brand colour keeps its hue.
@@ -107,7 +117,11 @@ impl Treatment {
 pub fn luminance(c: [u8; 3]) -> f64 {
     let lin = |v: u8| {
         let v = f64::from(v) / 255.0;
-        if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        if v <= 0.040_45 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
     };
     0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
 }
@@ -130,11 +144,20 @@ pub fn recolor_svg(svg: &str, t: Treatment) -> String {
     while i < chars.len() {
         let c = chars[i];
         if c == '#' {
-            let digits: String = chars[i + 1..].iter().take_while(|d| d.is_ascii_hexdigit()).collect();
+            let digits: String = chars[i + 1..]
+                .iter()
+                .take_while(|d| d.is_ascii_hexdigit())
+                .collect();
             let rgb = match digits.len() {
-                6 => u32::from_str_radix(&digits, 16).ok().map(|v| [(v >> 16) as u8, (v >> 8) as u8, v as u8]),
+                6 => u32::from_str_radix(&digits, 16)
+                    .ok()
+                    .map(|v| [(v >> 16) as u8, (v >> 8) as u8, v as u8]),
                 3 => u32::from_str_radix(&digits, 16).ok().map(|v| {
-                    let (r, g, b) = (((v >> 8) & 0xf) as u8, ((v >> 4) & 0xf) as u8, (v & 0xf) as u8);
+                    let (r, g, b) = (
+                        ((v >> 8) & 0xf) as u8,
+                        ((v >> 4) & 0xf) as u8,
+                        (v & 0xf) as u8,
+                    );
                     [r * 17, g * 17, b * 17]
                 }),
                 _ => None,
@@ -145,10 +168,21 @@ pub fn recolor_svg(svg: &str, t: Treatment) -> String {
                 continue;
             }
         }
-        if (c == 'r' || c == 'R') && chars[i..].iter().take(4).collect::<String>().eq_ignore_ascii_case("rgb(") {
-            if let Some(end) = chars[i..].iter().position(|x| *x == ')') {
+        if (c == 'r' || c == 'R')
+            && chars[i..]
+                .iter()
+                .take(4)
+                .collect::<String>()
+                .eq_ignore_ascii_case("rgb(")
+            && let Some(end) = chars[i..].iter().position(|x| *x == ')')
+        {
+            {
                 let inner: String = chars[i + 4..i + end].iter().collect();
-                let parts: Vec<u8> = inner.split(',').filter_map(|p| p.trim().parse::<f64>().ok()).map(|v| v.clamp(0.0, 255.0) as u8).collect();
+                let parts: Vec<u8> = inner
+                    .split(',')
+                    .filter_map(|p| p.trim().parse::<f64>().ok())
+                    .map(|v| v.clamp(0.0, 255.0) as u8)
+                    .collect();
                 if let [r, g, b] = parts[..] {
                     out.push_str(&hex(t.map([r, g, b])));
                     i += end + 1;
@@ -162,7 +196,13 @@ pub fn recolor_svg(svg: &str, t: Treatment) -> String {
     // Named colours, as attribute values and in styles.
     for (name, rgb) in [("black", [0u8, 0, 0]), ("white", [255, 255, 255])] {
         let to = hex(t.map(rgb));
-        for (a, b) in [("\"", "\""), ("'", "'"), (":", ";"), (":", "\""), (": ", ";")] {
+        for (a, b) in [
+            ("\"", "\""),
+            ("'", "'"),
+            (":", ";"),
+            (":", "\""),
+            (": ", ";"),
+        ] {
             out = out.replace(&format!("{a}{name}{b}"), &format!("{a}{to}{b}"));
         }
     }
@@ -172,13 +212,21 @@ pub fn recolor_svg(svg: &str, t: Treatment) -> String {
 /// Gives the root `<svg>` an explicit `fill="#000000"` when it has none, so shapes left with SVG's
 /// default black are recoloured like the others.
 fn default_fill(svg: &str) -> String {
-    let Some(start) = svg.find("<svg") else { return svg.to_string() };
-    let Some(len) = svg[start..].find('>') else { return svg.to_string() };
+    let Some(start) = svg.find("<svg") else {
+        return svg.to_string();
+    };
+    let Some(len) = svg[start..].find('>') else {
+        return svg.to_string();
+    };
     let tag = &svg[start..start + len];
     if tag.contains(" fill=") {
         return svg.to_string();
     }
-    let at = if tag.ends_with('/') { start + len - 1 } else { start + len };
+    let at = if tag.ends_with('/') {
+        start + len - 1
+    } else {
+        start + len
+    };
     format!("{} fill=\"#000000\"{}", &svg[..at], &svg[at..])
 }
 
@@ -227,7 +275,14 @@ mod tests {
     #[test]
     fn a_recoloured_svg_still_parses_and_raster_pixels_keep_their_alpha() {
         for t in Treatment::ALL {
-            assert!(resvg::usvg::Tree::from_str(&recolor_svg(LOGO, t), &resvg::usvg::Options::default()).is_ok(), "{t:?}");
+            assert!(
+                resvg::usvg::Tree::from_str(
+                    &recolor_svg(LOGO, t),
+                    &resvg::usvg::Options::default()
+                )
+                .is_ok(),
+                "{t:?}"
+            );
         }
         let mut img = RgbaImage::from_pixel(2, 1, image::Rgba([211, 28, 59, 128]));
         img.put_pixel(1, 0, image::Rgba([0, 0, 0, 0]));

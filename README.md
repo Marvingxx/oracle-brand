@@ -1,7 +1,9 @@
 # Oracle Brand Kit, Mockup Studio, Assets et Font
 
 **Brand Kit** : la source de vérité d'une identité de marque — logos rangés par rôle, palette,
-typographies, règles d'usage — et la fabrication des fichiers à livrer au client.
+typographies, règles d'usage — et la fabrication des fichiers à livrer au client : matrice de
+livraison (couleur, inversé, noir, blanc, niveaux de gris × SVG, PDF, EPS, AI, PNG, JPEG), guide des
+fichiers, design tokens W3C (`<marque>.tokens.json`) et « Vectoriser » pour un logo reçu en image.
 **Mockup Studio** : les logos de la marque posés sur des photos de supports (quatre coins, masques,
 premier plan, surcouches), strictement 2D. Local, sans compte, sans IA : chaque logo, variante,
 couleur, photo et masque vient du designer ; exports et rendus ne tournent que sur demande.
@@ -67,5 +69,7 @@ exportables (rendu resvg).
 Code : MIT OR Apache-2.0. Polices de l'interface : Lexend et Inter, SIL OFL 1.1
 (`style/assets/OFL-*.txt`). Dépendances : egui/eframe, image, resvg, sha2, uuid, serde, rfd, dirs,
 winresource — MIT et/ou Apache-2.0 (resvg : Apache-2.0 OR MIT) ; `oracle-edit-algo` (Oracle Edit,
-MIT OR Apache-2.0, avec rustfft et rayon : MIT OR Apache-2.0) ; `oracle-library-ui` (Oracle).
+MIT OR Apache-2.0, avec rustfft et rayon : MIT OR Apache-2.0) ; `oracle-library-ui` (Oracle) ;
+[VTracer](https://github.com/visioncortex/vtracer) et visioncortex (MIT OR Apache-2.0) pour « Vectoriser ».
+Les tokens suivent le [format W3C Design Tokens 2025.10](https://www.w3.org/community/reports/design-tokens/CG-FINAL-format-20251028/).
 Données de test : photo de carte et logos dessinés par le code, sans asset tiers.

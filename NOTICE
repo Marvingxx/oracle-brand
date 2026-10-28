@@ -12,5 +12,8 @@ See OFL-Inter.txt and OFL-Lexend.txt shipped alongside this notice.
 oracle-edit-algo includes the libfacedetection model, under BSD-3-Clause.
 See notices/LICENSE-libfacedetection.txt.
 
+Brand Kit traces raster logos with VTracer and visioncortex (Vision Cortex Research Group,
+MIT OR Apache-2.0, https://github.com/visioncortex/vtracer), used as libraries.
+
 This notice lists the copied material above; it is not a complete inventory of
 all Rust dependency licenses. Each dependency retains its own license.

@@ -293,6 +293,12 @@ pub fn run(
     if let Err(e) = write_file_guide(project, &root, &all) {
         results.push(failed(FILE_GUIDE, e));
     }
+    // The brand as W3C design tokens, for Penpot, Figma and developers.
+    let tokens_file = crate::tokens::file_name(&project.data);
+    let tokens = serde_json::to_vec_pretty(&crate::tokens::tokens(&project.data)).map_err(|e| e.to_string());
+    if let Err(e) = paths::destination(project, &root, &tokens_file).and_then(|dest| tokens.and_then(|t| write_atomic(&dest, &t))) {
+        results.push(failed(&tokens_file, e));
+    }
     let made = all.iter().filter(|r| r.error.is_none()).count();
     match project.data.deliveries.iter_mut().find(|d| d.folder == plan.folder) {
         Some(d) => d.outputs = made,
@@ -740,6 +746,10 @@ fn write_file_guide(project: &Project, root: &Path, outputs: &[OutputResult]) ->
         s.push_str(&names.join(" · "));
         s.push_str("</p><p class=\"dim\">Les fichiers de police ne sont pas fournis : chacun utilise sa propre licence.</p>");
     }
+    s.push_str(&format!(
+        "<h2>Pour les développeurs et les outils de design</h2><p><code>{}</code> : les couleurs et les typographies en design tokens au format W3C (2025.10), à importer dans Penpot, Figma (Tokens Studio) ou un projet web.</p>",
+        html(&crate::tokens::file_name(d))
+    ));
     s.push_str("<p class=\"dim\">manifest.json décrit chaque fichier (source, réglages, empreinte SHA-256).</p></body></html>\n");
     write_atomic(&root.join(FILE_GUIDE), s.as_bytes())
 }

@@ -158,6 +158,7 @@ pub fn logos(app: &mut App, ui: &mut egui::Ui) {
     let mut changed = false;
     let mut remove = None;
     let mut relink = None;
+    let mut vectorize = None;
     let width = ui.available_width();
     let cols = ((width + 12.0) / 300.0).floor().max(1.0) as usize;
     let card_w = (width - 12.0 * (cols as f32 - 1.0)) / cols as f32;
@@ -239,6 +240,14 @@ pub fn logos(app: &mut App, ui: &mut egui::Ui) {
                             if ui.small_button("Remplacer le fichier…").clicked() {
                                 relink = Some(i);
                             }
+                            if oracle_brand::render::master_kind(&paths[i]) == Some("raster")
+                                && ui
+                                    .small_button("Vectoriser")
+                                    .on_hover_text("Crée un maître SVG à côté de l'image (VTracer), à vérifier ; l'image n'est pas modifiée")
+                                    .clicked()
+                            {
+                                vectorize = Some(i);
+                            }
                             if ui.small_button("Retirer").on_hover_text("Retire le logo du projet. Le fichier n'est pas supprimé.").clicked() {
                                 remove = Some(i);
                             }
@@ -257,6 +266,19 @@ pub fn logos(app: &mut App, ui: &mut egui::Ui) {
             changed = true;
         } else {
             app.say("Format non pris en charge.", true);
+        }
+    }
+    if let Some(i) = vectorize {
+        let traced = app.project.as_mut().map(|p| {
+            let id = p.data.assets[i].id.clone();
+            oracle_brand::vectorize::vectorize(p, &id, oracle_brand::vectorize::Detail::Logo)
+        });
+        match traced.unwrap_or_else(|| Err("aucun projet ouvert".into())) {
+            Ok(_) => {
+                changed = true;
+                app.say("Maître SVG créé à côté de l'image : vérifiez-le avant de l'exporter.", false);
+            }
+            Err(e) => app.say(format!("Vectorisation impossible : {e}"), true),
         }
     }
     if let Some(i) = remove {
