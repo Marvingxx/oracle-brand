@@ -78,7 +78,7 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
     let render_path = scene.render_path(&project);
     // Wrapped: the three buttons are wider than the inspector.
     ui.horizontal_wrapped(|ui| {
-        if ui.add_enabled(app.rendering.is_none(), egui::Button::new(RichText::new("Rendre la scène").color(Color32::WHITE)).fill(theme::RED).min_size(egui::vec2(0.0, 34.0))).clicked() {
+        if ui.add_enabled(app.rendering.is_none(), egui::Button::new(RichText::new("Rendre la scène").color(t.on_accent)).fill(t.accent).min_size(egui::vec2(0.0, 34.0))).clicked() {
             render = Some(file.clone());
         }
         if render_path.is_file() && ui.button("Ouvrir le rendu").clicked() {
@@ -135,10 +135,10 @@ fn scene(app: &mut App, ui: &mut egui::Ui) {
         for a in &project.data.assets {
             let on = matches!(&fill.content, Content::BrandAsset { asset_id, .. } if *asset_id == a.id);
             let label = if a.label.is_empty() { a.role.label_fr().to_string() } else { a.label.clone() };
-            let text = RichText::new(format!("{label} · {}", a.variant.label_fr())).color(if on { Color32::WHITE } else { t.ink }).size(12.5);
+            let text = RichText::new(format!("{label} · {}", a.variant.label_fr())).color(if on { t.on_accent } else { t.ink }).size(12.5);
             let id = egui::Id::new(("brand-asset", &a.id));
             let resp = ui.dnd_drag_source(id, AssetPayload(a.id.clone()), |ui| {
-                egui::Frame::new().fill(if on { theme::RED } else { t.panel }).stroke(egui::Stroke::new(1.0, t.line)).corner_radius(theme::RADIUS).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| ui.label(text));
+                egui::Frame::new().fill(if on { t.accent } else { t.panel }).stroke(egui::Stroke::new(1.0, t.line)).corner_radius(theme::RADIUS).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| ui.label(text));
             });
             if resp.response.clicked() {
                 chosen = Some(a.id.clone());

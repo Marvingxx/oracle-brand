@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 oracle-brand = { workspace = true }
+oracle-library-ui = { workspace = true }
 oracle-style = { workspace = true }
 oracle-library = { path = "../../oracle-library/core" }
 oracle-suite-link = { workspace = true }

@@ -126,7 +126,7 @@ impl eframe::App for App {
             return;
         }
         if self.applied_theme != Some(self.settings.theme) {
-            theme::apply(&ctx, self.settings.theme);
+            theme::apply(&ctx, self.settings.theme, theme::Accent::Assets);
             self.applied_theme = Some(self.settings.theme);
         }
         let t = theme::tokens(&ctx);
@@ -152,7 +152,7 @@ impl eframe::App for App {
             let r = ui.max_rect();
             ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0, t.line));
         });
-        self.library.accent = theme::RED;
+        self.library.accent = theme::tokens(ui.ctx()).accent;
         self.library.french = true;
         egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg).inner_margin(egui::Margin { left: 20, right: 20, top: 18, bottom: 12 })).show(ui, |ui| self.library.ui(ui));
         self.handle(frame);

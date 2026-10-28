@@ -736,6 +736,7 @@ pub fn export_scene(project: &Project, scene_file: &Path, engines: &Engines, tem
         folder: String::new(),
         naming: String::new(),
         roles: Vec::new(),
+        treatments: Vec::new(),
     };
     crate::render::write_raster(&img, &preset, &out)?;
     scene.last_render = Some(RenderRecord {

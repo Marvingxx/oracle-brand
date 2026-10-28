@@ -39,7 +39,7 @@ New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
 if (-not $SkipBuild) {
   [Environment]::SetEnvironmentVariable('CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS', '-C target-feature=+crt-static')
-  Invoke-Native "cargo build ($Target)" { cargo build --release -p oracle-brand-kit -p oracle-mockup-studio -p oracle-assets -p oracle-font -p oracle-brand --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p oracle-brand-kit -p oracle-mockup-studio -p oracle-assets -p oracle-font -p oracle-brand --target $Target }
 }
 $Bin = Join-Path $TargetDir "$Target\release"
 
@@ -84,15 +84,21 @@ $Apps = @(
   @{ Id = 'oracle-font'; Name = 'Oracle Font'; Dir = 'oracle-font'; Icon = 'oracle-font'; Cli = $null
      Upgrade = 'FD52EB49-E7B0-42DD-B7AF-BA32499376B1'; Main = '867FA9F2-C25C-4BB7-A0F3-BF7AF8364112'; Desktop = '5B94359F-6996-4ED6-A483-4BFEBC355939' }
 )
+$Packages = @()
 foreach ($a in $Apps) {
   $Stage = Join-Path $TargetDir "windows-package\$($a.Id)"
-  Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
+  $Stage = [IO.Path]::GetFullPath($Stage)
+  $StageRoot = [IO.Path]::GetFullPath((Join-Path $TargetDir 'windows-package')) + [IO.Path]::DirectorySeparatorChar
+  if (-not $Stage.StartsWith($StageRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "unsafe staging path: $Stage" }
+  Remove-Item -LiteralPath $Stage -Recurse -Force -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $Stage | Out-Null
   Copy-Item (Join-Path $Bin "$($a.Id).exe") $Stage
   if ($a.Cli) { Copy-Item (Join-Path $Bin $a.Cli) $Stage }
   $Docs = Join-Path $Stage 'docs'
   New-Item -ItemType Directory -Force -Path $Docs | Out-Null
   Copy-Item (Join-Path $Root 'README.md') $Docs
+  Copy-Item (Join-Path $Root 'LICENSE-MIT'), (Join-Path $Root 'LICENSE-APACHE'), (Join-Path $Root 'NOTICE') $Docs
+  Copy-Item (Join-Path $Root 'packaging\notices') $Docs -Recurse
   Copy-Item (Join-Path $Root 'style\assets\OFL-*.txt') $Docs
   $Banner = Join-Path $Stage 'installer-banner.bmp'
   $Dialog = Join-Path $Stage 'installer-dialog.bmp'
@@ -109,4 +115,7 @@ foreach ($a in $Apps) {
   }
   Remove-Item -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($Msi, '.wixpdb'))
   Get-Item $Msi | Format-Table Name, Length
+  $Packages += $Msi
 }
+$Sums = $Packages | ForEach-Object { '{0}  {1}' -f (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant(), [IO.Path]::GetFileName($_) }
+[IO.File]::WriteAllLines((Join-Path $Dist "SHA256SUMS-$Version.txt"), [string[]]$Sums, [Text.UTF8Encoding]::new($false))

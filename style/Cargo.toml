@@ -1,10 +1,11 @@
 [package]
 name = "oracle-style"
-description = "Oracle's look for the brand apps (Brand Kit, Mockup Studio): Lexend, light and dark, 4 px rounding, the brand red."
+description = "Oracle's look for the brand apps: Inter, Edit surfaces, square controls, app-specific accents."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+oracle-suite-style = { package = "oracle-style", path = "../../oracle-library/style" }
 egui = { workspace = true }
 serde = { workspace = true }

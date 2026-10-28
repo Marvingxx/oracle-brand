@@ -5,6 +5,8 @@
 #![windows_subsystem = "windows"]
 
 mod pages;
+mod guide_ui;
+mod studio_ui;
 use oracle_style as theme;
 mod thumbs;
 #[cfg(test)]
@@ -29,12 +31,18 @@ fn main() -> eframe::Result<()> {
     if let Some(icon) = icon {
         viewport = viewport.with_icon(Arc::new(icon));
     }
-    let start = std::env::args().nth(1).map(PathBuf::from);
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    let guide_page = args.iter().any(|arg| arg == "--guide");
+    let studio_page = args.iter().any(|arg| arg == "--studio");
+    let start = args.iter().find(|arg| !arg.starts_with("--")).map(PathBuf::from);
     eframe::run_native(
         "Oracle Brand Kit",
         eframe::NativeOptions { viewport, ..Default::default() },
         Box::new(move |_cc| {
-            Ok(Box::new(App::new(start)))
+            let mut app = App::new(start);
+            if guide_page { app.tab = Tab::Guide; }
+            if studio_page { app.tab = Tab::Studio; }
+            Ok(Box::new(app))
         }),
     )
 }
@@ -47,13 +55,15 @@ pub enum Tab {
     Colors,
     Fonts,
     Rules,
+    Guide,
+    Studio,
     Presets,
     Export,
     Deliveries,
 }
 
 impl Tab {
-    const ALL: [Tab; 8] = [Tab::Identity, Tab::Logos, Tab::Colors, Tab::Fonts, Tab::Rules, Tab::Presets, Tab::Export, Tab::Deliveries];
+    const ALL: [Tab; 10] = [Tab::Identity, Tab::Logos, Tab::Colors, Tab::Fonts, Tab::Rules, Tab::Guide, Tab::Studio, Tab::Presets, Tab::Export, Tab::Deliveries];
     fn label(self) -> &'static str {
         match self {
             Tab::Identity => "Identité",
@@ -61,6 +71,8 @@ impl Tab {
             Tab::Colors => "Couleurs",
             Tab::Fonts => "Typographies",
             Tab::Rules => "Règles",
+            Tab::Guide => "Brand guide",
+            Tab::Studio => "Studio",
             Tab::Presets => "Presets",
             Tab::Export => "Export",
             Tab::Deliveries => "Livraisons",
@@ -107,6 +119,7 @@ pub struct App {
     pub tab: Tab,
     pub engines: Engines,
     pub thumbs: thumbs::Thumbs,
+    pub studio_ui: studio_ui::State,
     pub status: Option<(String, bool, Instant)>,
     dirty_since: Option<Instant>,
     // Export page state.
@@ -124,6 +137,7 @@ pub struct App {
     new_name: String,
     /// The Oracle Library window: its assets dropped on the window become logos.
     pub library: oracle_library_ui::InAppLibrary,
+    library_dock: oracle_library_ui::LibraryDock,
 }
 
 impl App {
@@ -137,6 +151,7 @@ impl App {
             tab: Tab::Logos,
             engines: Engines::discover(),
             thumbs: thumbs::Thumbs::new(),
+            studio_ui: studio_ui::State::default(),
             status: None,
             dirty_since: None,
             plan: None,
@@ -149,6 +164,7 @@ impl App {
             last_folder: None,
             new_name: String::new(),
             library: oracle_library_ui::InAppLibrary::new("oracle-brand-kit"),
+            library_dock: oracle_library_ui::LibraryDock::default(),
         };
         if let Some(p) = start {
             app.open(&p);
@@ -166,6 +182,7 @@ impl App {
     pub fn touch(&mut self) {
         self.dirty_since = Some(Instant::now());
         self.plan = None;
+        self.studio_ui.invalidate();
     }
 
     fn save_now(&mut self) {
@@ -202,6 +219,7 @@ impl App {
 
     pub fn open(&mut self, path: &std::path::Path) {
         self.save_now();
+        self.studio_ui = studio_ui::State::default();
         match Project::open(path) {
             Ok(p) => {
                 let dir = p.dir.clone();
@@ -278,6 +296,7 @@ impl App {
 impl App {
     /// One frame of the whole window.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
+        self.library_dock.initialize(false);
         let ctx = ui.ctx().clone();
         if !self.fonts_installed {
             // The fonts take effect from the next frame: draw nothing until then.
@@ -287,7 +306,7 @@ impl App {
             return;
         }
         if self.applied_theme != Some(self.settings.theme) {
-            theme::apply(&ctx, self.settings.theme);
+            theme::apply(&ctx, self.settings.theme, theme::Accent::Neutral);
             self.applied_theme = Some(self.settings.theme);
         }
         self.thumbs.poll(&ctx);
@@ -334,9 +353,7 @@ impl App {
                         self.save_now();
                         self.project = None;
                     }
-                    if ui.selectable_label(self.library.open, "Bibliothèque").on_hover_text("La Bibliothèque Oracle : glissez un logo sur la fenêtre pour l'ajouter à la marque").clicked() {
-                        self.library.toggle();
-                    }
+                    self.library_dock.menu(ui);
                 });
             });
             let r = ui.max_rect();
@@ -360,6 +377,11 @@ impl App {
             });
         });
 
+        if self.library.update_docked(&ctx) { self.library_dock.open_library(); }
+        let mut dock = std::mem::take(&mut self.library_dock);
+        dock.show(ui, 360.0, |ui, _panel| { self.library.panel_ui(ui, true); });
+        self.library_dock = dock;
+
         if self.project.is_none() {
             egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| self.start_page(ui));
             return;
@@ -368,8 +390,8 @@ impl App {
         egui::Panel::left("tabs").frame(egui::Frame::new().fill(t.bg).inner_margin(egui::Margin { left: 12, right: 12, top: 16, bottom: 12 })).exact_size(200.0).show(ui, |ui| {
             for tab in Tab::ALL {
                 let on = self.tab == tab;
-                let text = egui::RichText::new(tab.label()).color(if on { egui::Color32::WHITE } else { t.ink });
-                let b = egui::Button::new(text).fill(if on { theme::RED } else { egui::Color32::TRANSPARENT }).min_size(egui::vec2(176.0, 34.0));
+                let text = egui::RichText::new(tab.label()).color(if on { t.on_accent } else { t.ink });
+                let b = egui::Button::new(text).fill(if on { t.accent } else { egui::Color32::TRANSPARENT }).min_size(egui::vec2(176.0, 34.0));
                 if ui.add(b).clicked() {
                     self.tab = tab;
                 }
@@ -385,12 +407,13 @@ impl App {
                 Tab::Colors => pages::colors(self, ui),
                 Tab::Fonts => pages::fonts(self, ui),
                 Tab::Rules => pages::rules(self, ui),
+                Tab::Guide => guide_ui::show(self, ui),
+                Tab::Studio => studio_ui::show(self, ui),
                 Tab::Presets => pages::presets(self, ui),
                 Tab::Export => pages::export(self, ui),
                 Tab::Deliveries => pages::deliveries(self, ui),
             });
         });
-        self.library.ui(&ctx, true);
     }
 
 }

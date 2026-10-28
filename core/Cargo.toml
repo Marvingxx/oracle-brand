@@ -13,6 +13,7 @@ image = { workspace = true }
 resvg = { workspace = true }
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
 oracle-edit-algo = { workspace = true }
 
 [dev-dependencies]

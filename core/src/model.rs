@@ -1,12 +1,12 @@
 //! The brand project file (`brand.json`): what the designer defines, never generated.
 //!
-//! Schema version 1. Paths to sources are stored relative to the project folder when the source
+//! Schema version 2. Paths to sources are stored relative to the project folder when the source
 //! sits inside it (portable when the folder moves), absolute otherwise. Every list item has a stable
 //! id; ids are unique within their list.
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +43,13 @@ pub struct BrandProject {
     pub guide_documents: Vec<String>,
     #[serde(default)]
     pub mockup_scenes: Vec<String>,
+    #[serde(default)]
+    pub guide: crate::guide::Guide,
+    #[serde(default)]
+    pub studio: crate::studio::Studio,
+    /// Retain extensions written by other suite tools when saving this project.
+    #[serde(flatten)]
+    pub extensions: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 fn default_version() -> String {
@@ -276,6 +283,9 @@ pub struct ExportPreset {
     /// Roles this preset applies to (empty: all).
     #[serde(default)]
     pub roles: Vec<Role>,
+    /// Colour treatments to deliver, each a file of its own (empty: the master as drawn).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub treatments: Vec<crate::recolor::Treatment>,
 }
 
 fn one() -> f32 {
@@ -290,10 +300,14 @@ pub enum Format {
     Jpeg,
     Webp,
     Pdf,
+    /// Encapsulated PostScript, for printers and older software (written by Oracle Vector).
+    Eps,
+    /// Illustrator-compatible document (written by Oracle Vector).
+    Ai,
 }
 
 impl Format {
-    pub const ALL: [Format; 5] = [Format::Svg, Format::Png, Format::Jpeg, Format::Webp, Format::Pdf];
+    pub const ALL: [Format; 7] = [Format::Svg, Format::Png, Format::Jpeg, Format::Webp, Format::Pdf, Format::Eps, Format::Ai];
     pub fn ext(self) -> &'static str {
         match self {
             Format::Svg => "svg",
@@ -301,13 +315,15 @@ impl Format {
             Format::Jpeg => "jpg",
             Format::Webp => "webp",
             Format::Pdf => "pdf",
+            Format::Eps => "eps",
+            Format::Ai => "ai",
         }
     }
     pub fn is_raster(self) -> bool {
         matches!(self, Format::Png | Format::Jpeg | Format::Webp)
     }
     pub fn has_alpha(self) -> bool {
-        matches!(self, Format::Png | Format::Webp | Format::Svg | Format::Pdf)
+        matches!(self, Format::Png | Format::Webp | Format::Svg | Format::Pdf | Format::Ai)
     }
 }
 
@@ -345,6 +361,9 @@ impl BrandProject {
             deliveries: Vec::new(),
             guide_documents: Vec::new(),
             mockup_scenes: Vec::new(),
+            guide: crate::guide::Guide::default(),
+            studio: crate::studio::Studio::default(),
+            extensions: Default::default(),
         }
     }
 

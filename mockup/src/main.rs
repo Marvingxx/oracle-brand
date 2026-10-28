@@ -104,6 +104,7 @@ pub struct App {
     pub status: Option<(String, bool, Instant)>,
     dirty_since: Option<Instant>,
     pub library: oracle_library_ui::InAppLibrary,
+    library_dock: oracle_library_ui::LibraryDock,
 }
 
 impl App {
@@ -128,6 +129,7 @@ impl App {
             status: None,
             dirty_since: None,
             library: oracle_library_ui::InAppLibrary::new("oracle-mockup-studio"),
+            library_dock: oracle_library_ui::LibraryDock::default(),
         };
         app.reload_templates();
         if let Some(p) = start {
@@ -438,6 +440,7 @@ impl App {
 
     /// One frame of the whole window.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
+        self.library_dock.initialize(true);
         let ctx = ui.ctx().clone();
         if !self.fonts_installed {
             theme::install_fonts(&ctx);
@@ -446,7 +449,7 @@ impl App {
             return;
         }
         if self.applied_theme != Some(self.settings.theme) {
-            theme::apply(&ctx, self.settings.theme);
+            theme::apply(&ctx, self.settings.theme, theme::Accent::Neutral);
             self.applied_theme = Some(self.settings.theme);
         }
         let preview = self.preview.get_or_insert_with(|| preview::Previewer::new(&ctx, self.engines.clone()));
@@ -505,14 +508,12 @@ impl App {
                         self.settings.theme = choice;
                         self.save_settings();
                     }
+                    self.library_dock.menu(ui);
                     if self.project.is_some() {
                         if ui.button("Fermer le projet").clicked() {
                             self.save_now();
                             self.project = None;
                             self.mode = Mode::None;
-                        }
-                        if ui.selectable_label(self.library.open, "Bibliothèque").clicked() {
-                            self.library.toggle();
                         }
                     }
                 });
@@ -543,6 +544,16 @@ impl App {
             });
         });
 
+        if self.library.update_docked(&ctx) { self.library_dock.open_library(); }
+        let mut dock = std::mem::take(&mut self.library_dock);
+        dock.show(ui, 360.0, |ui, panel| { match panel {
+                oracle_library_ui::LibraryPanel::Library => self.library.panel_ui(ui, true),
+                oracle_library_ui::LibraryPanel::Properties => {
+                    egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| inspector::inspector(self, ui));
+                }
+            }; });
+        self.library_dock = dock;
+
         if self.project.is_none() {
             egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| self.start_page(ui));
             return;
@@ -554,17 +565,8 @@ impl App {
             ui.painter().vline(r.right() + 13.5, r.y_range(), egui::Stroke::new(1.0, t.line));
         });
 
-        if !matches!(self.mode, Mode::None) {
-            egui::Panel::right("inspector").frame(egui::Frame::new().fill(t.bg).inner_margin(egui::Margin { left: 16, right: 14, top: 16, bottom: 12 })).exact_size(330.0).show(ui, |ui| {
-                let r = ui.max_rect();
-                ui.painter().vline(r.left() - 16.5, r.y_range(), egui::Stroke::new(1.0, t.line));
-                egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| inspector::inspector(self, ui));
-            });
-        }
-
         egui::CentralPanel::default().frame(egui::Frame::new().fill(t.sunken)).show(ui, |ui| canvas::canvas(self, ui));
 
-        self.library.ui(&ctx, true);
     }
 }
 

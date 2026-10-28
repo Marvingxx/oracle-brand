@@ -61,7 +61,7 @@ fn find_cli(env: &str, app_name: &str, id: &str) -> Option<PathBuf> {
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn temp_path(ext: &str) -> PathBuf {
+pub(crate) fn temp_path(ext: &str) -> PathBuf {
     let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("oracle-brand-{}-{n}.{ext}", std::process::id()))
 }
@@ -282,7 +282,7 @@ fn encode(img: &RgbaImage, preset: &ExportPreset) -> Result<Vec<u8>, String> {
         Format::Webp => {
             image::codecs::webp::WebPEncoder::new_lossless(&mut buf).write_image(img.as_raw(), w, h, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())?;
         }
-        Format::Svg | Format::Pdf => return Err("format vectoriel : pas d'encodage d'image".into()),
+        Format::Svg | Format::Pdf | Format::Eps | Format::Ai => return Err("format vectoriel : pas d'encodage d'image".into()),
     }
     Ok(buf)
 }
@@ -341,10 +341,10 @@ fn commit(tmp: &Path, out: &Path) -> Result<(), String> {
     }
     // A rename across volumes fails: copy, then sync.
     if std::fs::rename(tmp, out).is_err() {
-        let staged = out.with_extension(format!("{}.part", ext_of(out)));
+        let staged = out.with_file_name(format!(".oracle-{}.part", uuid::Uuid::new_v4()));
         {
             let bytes = std::fs::read(tmp).map_err(|e| format!("{} : {e}", tmp.display()))?;
-            let mut f = std::fs::File::create(&staged).map_err(|e| format!("{} : {e}", staged.display()))?;
+            let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&staged).map_err(|e| format!("{} : {e}", staged.display()))?;
             f.write_all(&bytes).map_err(|e| format!("{} : {e}", staged.display()))?;
             f.sync_all().map_err(|e| format!("{} : {e}", staged.display()))?;
         }

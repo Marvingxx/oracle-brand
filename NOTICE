@@ -1,0 +1,16 @@
+Oracle Brand Kit, Mockup Studio, Assets and Font
+Copyright (c) 2026 Oracle contributors.
+Code licensed under MIT OR Apache-2.0. See LICENSE-MIT and LICENSE-APACHE.
+
+These applications use oracle-edit-algo from Oracle Edit, a modified version of
+PhotoCraft. The original copyright and NOTICE are preserved in
+notices/Oracle-Edit-NOTICE.txt and LICENSE-MIT.
+
+Bundled interface fonts: Inter and Lexend, under the SIL Open Font License 1.1.
+See OFL-Inter.txt and OFL-Lexend.txt shipped alongside this notice.
+
+oracle-edit-algo includes the libfacedetection model, under BSD-3-Clause.
+See notices/LICENSE-libfacedetection.txt.
+
+This notice lists the copied material above; it is not a complete inventory of
+all Rust dependency licenses. Each dependency retains its own license.

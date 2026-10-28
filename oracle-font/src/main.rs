@@ -114,6 +114,8 @@ struct App {
     /// Faces given to egui, with the pass they were given in: a font is usable from the next pass.
     loaded: HashMap<String, u64>,
     status: Option<String>,
+    library: oracle_library_ui::InAppLibrary,
+    library_dock: oracle_library_ui::LibraryDock,
 }
 
 impl App {
@@ -138,6 +140,8 @@ impl App {
             brand: 0,
             loaded: HashMap::new(),
             status: None,
+            library: oracle_library_ui::InAppLibrary::new("oracle-font"),
+            library_dock: oracle_library_ui::LibraryDock::default(),
         };
         app.rescan();
         app
@@ -238,8 +242,8 @@ impl App {
         theme::label(ui, "Polices");
         for (f, label) in items {
             let on = self.filter == f;
-            let text = RichText::new(label).color(if on { Color32::WHITE } else { t.ink });
-            if ui.add(egui::Button::new(text).fill(if on { theme::RED } else { Color32::TRANSPARENT }).min_size(vec2(196.0, 30.0))).clicked() {
+            let text = RichText::new(label).color(if on { t.on_accent } else { t.ink });
+            if ui.add(egui::Button::new(text).fill(if on { t.accent } else { Color32::TRANSPARENT }).min_size(vec2(196.0, 30.0))).clicked() {
                 self.filter = f;
             }
         }
@@ -266,7 +270,7 @@ impl App {
                 let Some(&fi) = rows.get(i) else { continue };
                 let Some(fam) = self.families.get(fi).cloned() else { continue };
                 let selected = self.selected.as_deref() == Some(fam.name.as_str());
-                let frame = egui::Frame::new().fill(if selected { t.sunken } else { t.bg }).stroke(egui::Stroke::new(1.0, t.line)).corner_radius(theme::RADIUS).inner_margin(10);
+                let frame = egui::Frame::new().fill(if selected { t.sunken } else { t.bg }).stroke(egui::Stroke::new(if selected { 2.0 } else { 1.0 }, if selected { t.accent } else { t.line })).corner_radius(theme::RADIUS).inner_margin(10);
                 let resp = frame
                     .show(ui, |ui| {
                         ui.set_min_height(row_h - 22.0);
@@ -595,6 +599,7 @@ fn contrast(a: Color32, b: Color32) -> f32 {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.library_dock.initialize(true);
         let ctx = ui.ctx().clone();
         if !self.fonts_installed {
             theme::install_fonts(&ctx);
@@ -603,7 +608,7 @@ impl eframe::App for App {
             return;
         }
         if self.applied_theme != Some(self.settings.theme) {
-            theme::apply(&ctx, self.settings.theme);
+            theme::apply(&ctx, self.settings.theme, theme::Accent::Font);
             self.applied_theme = Some(self.settings.theme);
         }
         if let Some(rx) = &self.scanning {
@@ -629,6 +634,7 @@ impl eframe::App for App {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(12.0);
+                    self.library_dock.menu(ui);
                     let mut choice = self.settings.theme;
                     egui::ComboBox::from_id_salt("theme").selected_text(choice.label()).width(110.0).show_ui(ui, |ui| {
                         for c in [theme::ThemeChoice::System, theme::ThemeChoice::Light, theme::ThemeChoice::Dark] {
@@ -647,8 +653,18 @@ impl eframe::App for App {
             ui.label(RichText::new(text).color(t.muted).size(12.0));
         });
         egui::Panel::left("filters").frame(egui::Frame::new().fill(t.bg).inner_margin(egui::Margin { left: 12, right: 12, top: 16, bottom: 12 })).exact_size(220.0).show(ui, |ui| self.sidebar(ui));
-        egui::Panel::right("details").frame(egui::Frame::new().fill(t.bg).inner_margin(egui::Margin { left: 16, right: 16, top: 16, bottom: 12 })).default_size(560.0).resizable(true).show(ui, |ui| self.details(ui));
+        if self.library.update_docked(&ctx) { self.library_dock.open_library(); }
+        let mut dock = std::mem::take(&mut self.library_dock);
+        dock.show(ui, 560.0, |ui, panel| match panel {
+            oracle_library_ui::LibraryPanel::Library => self.library.panel_ui(ui, true),
+            oracle_library_ui::LibraryPanel::Properties => self.details(ui),
+        });
+        self.library_dock = dock;
         egui::CentralPanel::default().frame(egui::Frame::new().fill(t.bg).inner_margin(egui::Margin { left: 16, right: 16, top: 16, bottom: 12 })).show(ui, |ui| self.list(ui));
+    }
+
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
+        self.library.claim_drops(input, None);
     }
 
     fn on_exit(&mut self) {
@@ -664,8 +680,8 @@ mod tests {
     fn contrast_follows_wcag() {
         assert!((contrast(Color32::BLACK, Color32::WHITE) - 21.0).abs() < 0.01);
         assert!((contrast(Color32::WHITE, Color32::WHITE) - 1.0).abs() < 0.01);
-        // Oracle red on white: readable for large text.
-        assert!(contrast(Color32::from_rgb(0xd3, 0x1c, 0x3b), Color32::WHITE) > 4.5);
+        // Font purple on white meets the normal-text contrast threshold.
+        assert!(contrast(Color32::from_rgb(0x6d, 0x4a, 0xff), Color32::WHITE) > 4.5);
     }
 
     #[test]

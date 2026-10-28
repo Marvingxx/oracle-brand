@@ -487,11 +487,20 @@ pub fn rules(app: &mut App, ui: &mut egui::Ui) {
 // ---------------------------------------------------------------- Presets
 
 pub fn presets(app: &mut App, ui: &mut egui::Ui) {
-    heading(ui, "Presets d'export", "Comment chaque fichier livré est fabriqué. Noms : {marque} {role} {variante} {preset} {version} {w} {h}.");
+    heading(ui, "Presets d'export", "Comment chaque fichier livré est fabriqué. Noms et dossiers : {marque} {role} {variante} {traitement} {format} {preset} {version} {w} {h}.");
     let Some(p) = app.project.as_mut() else { return };
     let t = theme::tokens(ui.ctx());
     let mut changed = false;
     ui.horizontal(|ui| {
+        let has_matrix = p.data.export_presets.iter().any(|x| x.id.starts_with("matrix-"));
+        if ui
+            .add_enabled(!has_matrix, egui::Button::new("Ajouter la matrice de livraison"))
+            .on_hover_text("Chaque logo en couleur, inversé, noir, blanc et niveaux de gris, en SVG, PDF, EPS, AI, PNG et JPEG, rangé par logo, traitement et format")
+            .clicked()
+        {
+            p.data.export_presets.extend(oracle_brand::presets::delivery_matrix());
+            changed = true;
+        }
         if theme::primary(ui, "Nouveau preset").clicked() {
             let id = p.data.new_id("preset");
             p.data.export_presets.push(ExportPreset {
@@ -508,6 +517,7 @@ pub fn presets(app: &mut App, ui: &mut egui::Ui) {
                 folder: "Autres".into(),
                 naming: "{marque}_{role}_{variante}_{w}".into(),
                 roles: Vec::new(),
+                treatments: Vec::new(),
             });
             changed = true;
         }
@@ -531,6 +541,21 @@ pub fn presets(app: &mut App, ui: &mut egui::Ui) {
                     ui.add_sized([150.0, 28.0], egui::Label::new(RichText::new("Format").color(t.muted)));
                     for f in Format::ALL {
                         changed |= ui.selectable_value(&mut pr.format, f, f.ext().to_uppercase()).changed();
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_sized([150.0, 28.0], egui::Label::new(RichText::new("Traitements").color(t.muted)))
+                        .on_hover_text("Versions calculées depuis le maître couleur ; une version que vous avez dessinée (même rôle, cette variante) est livrée à la place. Aucune case : le maître tel quel.");
+                    for tr in oracle_brand::recolor::Treatment::ALL {
+                        let mut on = pr.treatments.contains(&tr);
+                        if ui.checkbox(&mut on, tr.label_fr()).changed() {
+                            if on {
+                                pr.treatments.push(tr);
+                            } else {
+                                pr.treatments.retain(|x| *x != tr);
+                            }
+                            changed = true;
+                        }
                     }
                 });
                 if pr.format.is_raster() {
@@ -654,7 +679,7 @@ pub fn export(app: &mut App, ui: &mut egui::Ui) {
     if let Some(run) = &app.running {
         card(ui, |ui| {
             ui.label(RichText::new(format!("Export en cours : {} / {}", run.done, run.total)).strong());
-            ui.add(egui::ProgressBar::new(if run.total == 0 { 0.0 } else { run.done as f32 / run.total as f32 }).fill(theme::RED));
+            ui.add(egui::ProgressBar::new(if run.total == 0 { 0.0 } else { run.done as f32 / run.total as f32 }).fill(t.accent));
             ui.label(RichText::new(&run.current).color(t.muted).size(12.0));
             if ui.button("Annuler").on_hover_text("S'arrête après le fichier en cours ; les fichiers faits restent").clicked() {
                 run.cancel.store(true, Ordering::Relaxed);
@@ -726,7 +751,7 @@ pub fn export(app: &mut App, ui: &mut egui::Ui) {
     let reuses_draft = !delivered_last && p.data.deliveries.iter().any(|d| d.folder == plan.folder);
     ui.horizontal(|ui| {
         let label = format!("Exporter {doable} fichier{}", if doable > 1 { "s" } else { "" });
-        if ui.add_enabled(doable > 0, egui::Button::new(RichText::new(label).color(Color32::WHITE)).fill(theme::RED).min_size(egui::vec2(170.0, 34.0))).clicked() {
+        if ui.add_enabled(doable > 0, egui::Button::new(RichText::new(label).color(t.on_accent)).fill(t.accent).min_size(egui::vec2(170.0, 34.0))).clicked() {
             start(app, ui.ctx(), plan.clone(), None);
         }
         let failed: Vec<String> = app.last_results.iter().filter(|r| r.error.is_some() && plan.outputs.iter().any(|o| o.path == r.path && o.blocked.is_none())).map(|r| r.path.clone()).collect();

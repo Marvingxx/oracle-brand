@@ -20,8 +20,9 @@ const SYMBOL: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="160" hei
 
 fn demo_project() -> std::path::PathBuf {
     use oracle_brand::model::{Asset, BrandColor, BrandFont, Role, Variant};
-    let dir = std::env::temp_dir().join(format!("oracle-brand-kit-ui-{}", std::process::id())).join("Marque Exemple");
-    let _ = std::fs::remove_dir_all(&dir);
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let unique = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("oracle-brand-kit-ui-{}-{unique}", std::process::id())).join("Marque Exemple");
     let mut p = oracle_brand::Project::create(&dir, "Marque Exemple").unwrap();
     p.data.client = "Client fictif".into();
     std::fs::create_dir_all(dir.join("Sources")).unwrap();
@@ -57,6 +58,99 @@ fn settle(h: &mut Harness<'_, App>, frames: usize) {
         h.step();
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
+}
+
+#[test]
+fn guide_editor_is_passive_until_edited_and_exports_an_explicit_draft() {
+    let dir = demo_project();
+    let mut h = harness(ThemeChoice::Dark, &dir);
+    h.state_mut().tab = Tab::Guide;
+    settle(&mut h, 8);
+    let original = h.state().project.as_ref().unwrap().data.clone();
+    h.get_by_label_contains("0 / 12 chapitres validés");
+    h.get_by_label("Périmètre et modules").click();
+    settle(&mut h, 3);
+    h.get_by_label("Droits des ressources à remettre").click();
+    settle(&mut h, 3);
+    assert_eq!(h.state().project.as_ref().unwrap().data, original);
+    h.get_by_label("Droits des ressources à remettre").click();
+    settle(&mut h, 3);
+    h.get_by_label_contains("BG-01 · Périmètre et gouvernance").click();
+    settle(&mut h, 3);
+    assert_eq!(h.state().project.as_ref().unwrap().data, original, "opening a chapter must not insert empty fields or invalidate approvals");
+    h.get_by_label_contains("BG-01 · Périmètre et gouvernance").click();
+    h.get_by_label("Exporter un brouillon").click();
+    settle(&mut h, 4);
+    let project = h.state().project.as_ref().unwrap();
+    assert_eq!(project.data.guide_documents.len(), 1);
+    let guide = project.resolve(&project.data.guide_documents[0]);
+    assert!(guide.is_file());
+    let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(guide.parent().unwrap().join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest["draft"], true);
+    assert_eq!(manifest["completeForScope"], false);
+    assert_eq!(manifest["fontFilesIncluded"], false);
+    assert!(manifest["resourcesById"].as_object().unwrap().is_empty());
+    let saved = oracle_brand::Project::open(&dir).unwrap();
+    assert_eq!(saved.data.guide_documents, project.data.guide_documents);
+    let evidence = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../outputs/brand-guide-verification");
+    std::fs::create_dir_all(&evidence).unwrap();
+    h.render().unwrap().save(evidence.join("brand-guide-editor.png")).unwrap();
+}
+
+#[test]
+fn studio_routes_preview_exports_and_shared_concepts() {
+    let dir = demo_project();
+    let mut p = oracle_brand::Project::open(&dir).unwrap();
+    p.data.studio.asset_id = p.data.assets[0].id.clone();
+    for asset in &p.data.assets {
+        p.data.guide.rights.insert(asset.id.clone(), oracle_brand::guide::Rights {
+            allow_delivery: true,
+            evidence: "Création géométrique du test".into(),
+            reviewer: "Banc de test".into(),
+            reviewed_at: oracle_brand::now_rfc3339(),
+            source_hash: oracle_brand::project::hash_file(&p.resolve(&asset.source)).unwrap(),
+        });
+    }
+    p.save().unwrap();
+    let mut h = harness(ThemeChoice::Dark, &dir);
+    settle(&mut h, 3);
+    h.get_by_label("Studio").click();
+    settle(&mut h, 3);
+    let original = h.state().project.as_ref().unwrap().data.clone();
+    h.get_by_label("Bento").click();
+    settle(&mut h, 2);
+    h.get_by_label("Présentations").click();
+    settle(&mut h, 2);
+    assert_eq!(h.state().project.as_ref().unwrap().data, original);
+    h.get_by_label("Ajouter une piste").click();
+    settle(&mut h, 2);
+    assert_eq!(h.state().project.as_ref().unwrap().data.studio.concepts.len(), 1);
+    h.get_by_label("Exporter les planches").click();
+    settle(&mut h, 3);
+    let folder = h.state().studio_ui.last_folder.as_ref().unwrap();
+    assert!(folder.join("planche-01.png").is_file());
+    assert!(oracle_brand::Project::open(&dir).unwrap().data.studio.concepts.len() == 1);
+    h.get_by_label("Grilles").click();
+    settle(&mut h, 2);
+    h.get_by_label("Actualiser l'aperçu").click();
+    settle(&mut h, 3);
+    assert!(!h.state().status.as_ref().is_some_and(|(_, error, _)| *error));
+    let evidence = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../outputs/brand-studio-verification");
+    std::fs::create_dir_all(&evidence).unwrap();
+    h.render().unwrap().save(evidence.join("studio-grille-interface.png")).unwrap();
+    h.get_by_label("Espace client").click();
+    settle(&mut h, 2);
+    h.get_by_label("Créer un espace client brouillon").click();
+    settle(&mut h, 3);
+    let folder = h.state().studio_ui.last_folder.as_ref().unwrap();
+    assert!(folder.join("index.html").is_file());
+    assert!(folder.join("guide.html").is_file());
+    h.render().unwrap().save(evidence.join("studio-espace-client-interface.png")).unwrap();
+    h.get_by_label("Exports de logos").click();
+    settle(&mut h, 2);
+    h.get_by_label("Configurer les presets").click();
+    settle(&mut h, 2);
+    assert_eq!(h.state().tab, Tab::Presets);
 }
 
 #[test]

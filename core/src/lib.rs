@@ -13,12 +13,15 @@
 
 pub mod composite;
 pub mod export;
+pub mod guide;
 pub mod mockup;
 pub mod mockup_demo;
 pub mod model;
 pub mod presets;
 pub mod project;
+pub mod recolor;
 pub mod render;
+pub mod studio;
 
 pub use model::{Asset, BrandProject, Format, Role, Variant};
 pub use project::{Project, SourceState};

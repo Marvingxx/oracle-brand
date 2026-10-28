@@ -119,9 +119,9 @@ pub fn canvas(app: &mut App, ui: &mut egui::Ui) {
         let pts: Vec<Pos2> = q.iter().map(|p| app.view.screen_of(*p)).collect();
         let selected = i == app.zone;
         let valid = zone_homography(q, 1.0).is_ok();
-        let color = if !valid { t.bad } else if selected { theme::RED } else { Color32::from_white_alpha(200) };
+        let color = if !valid { t.bad } else if selected { t.accent } else { Color32::from_white_alpha(200) };
         if editing_template {
-            let fill = if selected { theme::RED.gamma_multiply(0.18) } else { Color32::from_white_alpha(28) };
+            let fill = if selected { t.accent.gamma_multiply(0.18) } else { Color32::from_white_alpha(28) };
             painter.add(Shape::convex_polygon(pts.clone(), fill, Stroke::NONE));
         }
         if editing_template || selected {

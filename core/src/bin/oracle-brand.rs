@@ -9,6 +9,10 @@
 //! oracle-brand plan DIR [--assets id,id] [--presets id,id]
 //! oracle-brand export DIR [--assets id,id] [--presets id,id] [--changed] [--mockups [--templates DIR]]
 //! oracle-brand deliver DIR FOLDER
+//! oracle-brand guide-check DIR
+//! oracle-brand guide-export DIR [--draft]
+//! oracle-brand studio-export DIR grid|bento|presentations
+//! oracle-brand hub-export DIR [--draft]
 //!
 //! oracle-brand mockup-demo-photo OUT_DIR                      (photo et masque de synthèse)
 //! oracle-brand template-new TEMPLATES_DIR PHOTO "Nom"
@@ -58,7 +62,7 @@ fn variant(s: &str) -> Result<Variant, String> {
 }
 
 fn run(args: &[String]) -> Result<(), String> {
-    let usage = "usage : oracle-brand new|add-logo|add-color|add-font|status|plan|export|deliver|template-new|template-zone|template-occlusion|scene-new|scene-fill|scenes|render DIR …";
+    let usage = "usage : oracle-brand new|add-logo|add-color|add-font|status|plan|export|deliver|guide-check|guide-export|studio-export|hub-export|template-new|template-zone|template-occlusion|scene-new|scene-fill|scenes|render DIR …";
     let cmd = args.first().ok_or(usage)?;
     let dir = PathBuf::from(args.get(1).ok_or(usage)?);
     match cmd.as_str() {
@@ -100,6 +104,33 @@ fn run(args: &[String]) -> Result<(), String> {
             p.data.fonts.push(BrandFont { id: id.clone(), family: family.clone(), usage: args.get(3).cloned().unwrap_or_default(), ..Default::default() });
             p.save()?;
             println!("{id}");
+        }
+        "guide-check" => {
+            let p = Project::open(&dir)?;
+            let report = oracle_brand::guide::check(&p);
+            println!("{}", serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?);
+            if !report.complete() { return Err(format!("{} blocage(s) avant livraison", report.blockers.len())); }
+        }
+        "guide-export" => {
+            let mut p = Project::open(&dir)?;
+            let folder = oracle_brand::guide::export(&p, &Engines::discover(), args.iter().any(|s| s == "--draft"))?;
+            let reference = p.store_path(&folder.join("guide.html"));
+            p.data.guide_documents.push(reference);
+            p.save().map_err(|e| format!("Guide créé dans {}, mais son lien n'a pas pu être enregistré : {e}", folder.display()))?;
+            println!("{}", folder.display());
+        }
+        "studio-export" => {
+            use oracle_brand::studio::{self, Tool};
+            let p = Project::open(&dir)?;
+            let tool = match args.get(2).map(String::as_str) {
+                Some("grid") => Tool::Grid, Some("bento") => Tool::Bento, Some("presentations") => Tool::Presentations,
+                _ => return Err("Indiquer grid, bento ou presentations.".into()),
+            };
+            println!("{}", studio::export(&p, &Engines::discover(), tool)?.display());
+        }
+        "hub-export" => {
+            let p = Project::open(&dir)?;
+            println!("{}", oracle_brand::guide::export_hub(&p, &Engines::discover(), args.iter().any(|s| s == "--draft"))?.display());
         }
         "status" => {
             let p = Project::open(&dir)?;

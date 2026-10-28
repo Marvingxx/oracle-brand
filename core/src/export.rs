@@ -5,13 +5,16 @@
 //! never written again: regenerating makes a new folder (`v1-2`, `v1-3`…). Each file is written
 //! atomically, so a failed export leaves the previous files as they were.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+mod paths;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Serialize;
 
 use crate::model::{Asset, Delivery, ExportPreset, Format};
+use crate::recolor::Treatment;
 use crate::project::{Project, SourceState, hash_file, safe_name};
 use crate::render::{self, Engines};
 
@@ -26,6 +29,8 @@ pub struct PlannedOutput {
     /// Relative to the delivery folder, with `/`.
     pub path: String,
     pub format: Format,
+    /// The colour treatment the file is made with.
+    pub treatment: Treatment,
     /// A problem known before rendering (a JPEG without background, a raster master asked as SVG…).
     pub blocked: Option<String>,
 }
@@ -54,6 +59,9 @@ pub struct OutputResult {
     pub bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
+    /// The colour treatment it was made with (absent: the master as drawn).
+    #[serde(skip_serializing_if = "Treatment::is_original")]
+    pub treatment: Treatment,
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +82,11 @@ impl Report {
 
 /// Fills a preset's naming pattern. Unknown `{fields}` stay as written.
 pub fn file_stem(pattern: &str, project: &Project, asset: &Asset, preset: &ExportPreset) -> String {
+    stem_with(pattern, project, asset, preset, Treatment::Original)
+}
+
+/// [`file_stem`] with `{traitement}` and `{format}` too (also used for preset folders).
+fn stem_with(pattern: &str, project: &Project, asset: &Asset, preset: &ExportPreset, treatment: Treatment) -> String {
     let brand = safe_name(&project.data.brand_name).replace(' ', "-");
     let w = preset.width.map(|w| w.to_string()).unwrap_or_default();
     let h = preset.height.map(|h| h.to_string()).unwrap_or_default();
@@ -84,8 +97,24 @@ pub fn file_stem(pattern: &str, project: &Project, asset: &Asset, preset: &Expor
         .replace("{preset}", &safe_name(&preset.name).replace(' ', "-"))
         .replace("{version}", &project.data.version)
         .replace("{w}", &w)
-        .replace("{h}", &h);
+        .replace("{h}", &h)
+        .replace("{traitement}", treatment.slug())
+        .replace("{format}", &preset.format.ext().to_uppercase());
     safe_name(&filled)
+}
+
+/// A preset's folder with its `{fields}` filled by safe names. The rest is kept as written, so an
+/// unsafe folder is refused by the path checks rather than quietly rewritten.
+fn folder_of(project: &Project, asset: &Asset, preset: &ExportPreset, treatment: Treatment) -> String {
+    let brand = safe_name(&project.data.brand_name).replace(' ', "-");
+    preset
+        .folder
+        .replace("{marque}", &brand)
+        .replace("{role}", asset.role.slug())
+        .replace("{variante}", asset.variant.slug())
+        .replace("{traitement}", treatment.slug())
+        .replace("{format}", &preset.format.ext().to_uppercase())
+        .replace("{version}", &safe_name(&project.data.version))
 }
 
 /// The folder the next export writes to: the latest delivery if it hasn't been sent, else a new one.
@@ -111,22 +140,37 @@ pub fn next_folder(project: &Project) -> String {
 pub fn plan(project: &Project, asset_ids: &[String], preset_ids: &[String]) -> Plan {
     let folder = next_folder(project);
     let mut outputs = Vec::new();
-    let mut taken: BTreeMap<String, usize> = BTreeMap::new();
+    let mut taken = reserved_names();
     for preset in project.data.export_presets.iter().filter(|p| preset_ids.is_empty() || preset_ids.contains(&p.id)) {
         for asset in project.data.assets.iter().filter(|a| asset_ids.is_empty() || asset_ids.contains(&a.id)) {
             if !preset.roles.is_empty() && !preset.roles.contains(&asset.role) {
                 continue;
             }
-            let stem = file_stem(&preset.naming, project, asset, preset);
-            let mut path = format!("{}/{stem}.{}", preset.folder.trim_matches('/'), preset.format.ext());
-            // Two outputs with one name: number the later ones rather than overwrite.
-            let n = taken.entry(path.clone()).or_insert(0);
-            *n += 1;
-            if *n > 1 {
-                path = format!("{}/{stem}-{}.{}", preset.folder.trim_matches('/'), n, preset.format.ext());
+            let treatments = if preset.treatments.is_empty() { vec![Treatment::Original] } else { preset.treatments.clone() };
+            for treatment in treatments {
+            // Treatments are computed from the colour master only, and never when the designer
+            // drew that version: their own master (an asset of the same role) is delivered.
+            if treatment != Treatment::Original {
+                let drawn = project.data.assets.iter().any(|a| a.role == asset.role && Some(a.variant) == treatment.variant());
+                if asset.variant != crate::model::Variant::Color || drawn {
+                    continue;
+                }
             }
+            let stem = stem_with(&preset.naming, project, asset, preset, treatment);
+            let sub = folder_of(project, asset, preset, treatment);
+            let raw = if sub.is_empty() {
+                format!("{stem}.{}", preset.format.ext())
+            } else {
+                format!("{sub}/{stem}.{}", preset.format.ext())
+            };
+            let validated = paths::relative(&raw);
+            let path = paths::unique(validated.as_deref().unwrap_or(&raw), &mut taken);
             let src = project.resolve(&asset.source);
-            let blocked = if !src.is_file() {
+            let blocked = if let Err(e) = validated {
+                Some(e)
+            } else if let Err(e) = paths::root(project, &folder).and_then(|root| paths::destination(project, &root, &path)) {
+                Some(e)
+            } else if !src.is_file() {
                 Some(format!("fichier maître introuvable : {}", src.display()))
             } else if preset.format == Format::Jpeg && preset.background.is_none() {
                 Some("un JPEG n'a pas de transparence : choisissez une couleur de fond dans le preset".into())
@@ -137,7 +181,8 @@ pub fn plan(project: &Project, asset_ids: &[String], preset_ids: &[String]) -> P
             } else {
                 None
             };
-            outputs.push(PlannedOutput { asset_id: asset.id.clone(), preset_id: preset.id.clone(), path, format: preset.format, blocked });
+            outputs.push(PlannedOutput { asset_id: asset.id.clone(), preset_id: preset.id.clone(), path, format: preset.format, treatment, blocked });
+            }
         }
     }
     Plan { folder, outputs }
@@ -148,17 +193,30 @@ pub fn plan(project: &Project, asset_ids: &[String], preset_ids: &[String]) -> P
 /// mask or a setting changed since), is listed as blocked with the reason: never delivered stale.
 pub fn plan_mockups(project: &Project, plan: &mut Plan, template_roots: &[PathBuf]) {
     use crate::mockup::{SceneState, scene_state, scenes};
+    let mut taken = reserved_names();
+    taken.extend(plan.outputs.iter().map(|o| paths::key(&o.path)));
     for (_, _, s) in scenes(project) {
         let Ok(scene) = s else { continue };
         let file = scene.last_render.as_ref().and_then(|r| Path::new(&r.file).file_name().map(|n| n.to_string_lossy().to_string()));
         let name = file.unwrap_or_else(|| format!("{}.{}", safe_name(&scene.name), scene.output.format.ext()));
-        let blocked = match scene_state(project, &scene, template_roots) {
+        let mut blocked = match scene_state(project, &scene, template_roots) {
             SceneState::UpToDate => None,
             SceneState::NeverRendered => Some("scène jamais rendue dans Mockup Studio".to_string()),
             SceneState::Outdated(why) => Some(format!("rendu à mettre à jour dans Mockup Studio ({})", why.join(", "))),
             SceneState::Broken(e) => Some(e),
         };
-        plan.outputs.push(PlannedOutput { asset_id: scene.id, preset_id: MOCKUP_PRESET.into(), path: format!("Mockups/{name}"), format: scene.output.format, blocked });
+        let path = paths::unique(&format!("Mockups/{name}"), &mut taken);
+        if let Err(e) = paths::root(project, &plan.folder).and_then(|root| paths::destination(project, &root, &path)) {
+            blocked = Some(e);
+        }
+        plan.outputs.push(PlannedOutput {
+            asset_id: scene.id,
+            preset_id: MOCKUP_PRESET.into(),
+            path,
+            format: scene.output.format,
+            treatment: Treatment::Original,
+            blocked,
+        });
     }
 }
 
@@ -172,7 +230,29 @@ pub fn run(
     cancel: &AtomicBool,
     mut progress: impl FnMut(usize, usize, &str),
 ) -> Report {
-    let root = project.deliveries_root().join(&plan.folder);
+    // Validate again at execution: plans can be stale or supplied directly by a caller.
+    let checked = paths::root(project, &plan.folder).and_then(|root| {
+        if project.data.deliveries.iter().any(|d| paths::key(&d.folder) == paths::key(&plan.folder) && d.delivered) {
+            return Err("livraison déjà envoyée : créez un nouveau plan".into());
+        }
+        for name in ["manifest.json", "README.txt", FILE_GUIDE] {
+            paths::destination(project, &root, name)?;
+        }
+        Ok(root)
+    });
+    let root = match checked {
+        Ok(root) => root,
+        Err(e) => return Report {
+            folder: project.deliveries_root().join(&plan.folder),
+            results: vec![failed(&plan.folder, e)], cancelled: false,
+        },
+    };
+    let mut taken = reserved_names();
+    for out in &plan.outputs {
+        if !taken.insert(paths::key(&out.path)) {
+            return Report { folder: root, results: vec![failed(&out.path, "destinations dupliquées ou réservées : recréez le plan".into())], cancelled: false };
+        }
+    }
     let todo: Vec<&PlannedOutput> = plan.outputs.iter().filter(|o| only.is_none_or(|only| only.contains(&o.path))).collect();
     let mut results = Vec::new();
     let mut cancelled = false;
@@ -187,15 +267,17 @@ pub fn run(
     }
     // Merge with an earlier manifest of this folder, so a retry keeps the files already made.
     let previous = read_manifest_results(&root.join("manifest.json"));
-    let mut merged: BTreeMap<String, OutputResult> = previous.into_iter().map(|r| (r.path.clone(), r)).collect();
+    let mut merged: BTreeMap<String, OutputResult> = previous.into_iter()
+        .filter(|r| !reserved_names().contains(&paths::key(&r.path)) && paths::destination(project, &root, &r.path).is_ok())
+        .map(|r| (paths::key(&r.path), r)).collect();
     for r in &results {
-        merged.insert(r.path.clone(), r.clone());
+        merged.insert(paths::key(&r.path), r.clone());
     }
     // A regeneration after a delivery: the unchanged files come along, so the folder is complete.
     if !cancelled {
         let made: std::collections::BTreeSet<String> = merged.keys().cloned().collect();
         for r in complete_from_delivered(project, plan, &root, &made, false) {
-            merged.insert(r.path.clone(), r.clone());
+            merged.insert(paths::key(&r.path), r.clone());
             results.push(r);
         }
     }
@@ -203,10 +285,13 @@ pub fn run(
     let made_ids: Vec<String> = results.iter().filter(|r| r.error.is_none()).map(|r| r.asset_id.clone()).collect();
     project.record_hashes(&made_ids);
     if let Err(e) = write_manifest(project, &root, &all) {
-        results.push(OutputResult { path: "manifest.json".into(), asset_id: String::new(), preset_id: String::new(), error: Some(e), width: None, height: None, bytes: None, sha256: None });
+        results.push(OutputResult { path: "manifest.json".into(), asset_id: String::new(), preset_id: String::new(), error: Some(e), width: None, height: None, bytes: None, sha256: None, treatment: Treatment::Original });
     }
     if let Err(e) = write_readme(project, &root, &all) {
-        results.push(OutputResult { path: "README.txt".into(), asset_id: String::new(), preset_id: String::new(), error: Some(e), width: None, height: None, bytes: None, sha256: None });
+        results.push(OutputResult { path: "README.txt".into(), asset_id: String::new(), preset_id: String::new(), error: Some(e), width: None, height: None, bytes: None, sha256: None, treatment: Treatment::Original });
+    }
+    if let Err(e) = write_file_guide(project, &root, &all) {
+        results.push(failed(FILE_GUIDE, e));
     }
     let made = all.iter().filter(|r| r.error.is_none()).count();
     match project.data.deliveries.iter_mut().find(|d| d.folder == plan.folder) {
@@ -235,7 +320,7 @@ fn complete_from_delivered(project: &Project, plan: &Plan, root: &Path, made: &s
         sources: Vec<Source>,
     }
     let Some(prev) = project.data.deliveries.iter().rev().find(|d| d.delivered && d.folder != plan.folder) else { return Vec::new() };
-    let prev_root = project.deliveries_root().join(&prev.folder);
+    let Ok(prev_root) = paths::root(project, &prev.folder) else { return Vec::new() };
     let manifest = prev_root.join("manifest.json");
     let sources: Vec<Source> = std::fs::read(&manifest).ok().and_then(|b| serde_json::from_slice::<Prev>(&b).ok()).map(|p| p.sources).unwrap_or_default();
     let renders: BTreeMap<String, PathBuf> = crate::mockup::scenes(project)
@@ -244,11 +329,19 @@ fn complete_from_delivered(project: &Project, plan: &Plan, root: &Path, made: &s
         .filter_map(|s| s.last_render.map(|r| (s.id, project.resolve(&r.file))))
         .collect();
     let mut out = Vec::new();
+    let mut taken = made.clone();
+    taken.extend(reserved_names());
     for old in read_manifest_results(&manifest) {
         let Some(sha) = old.sha256.clone().filter(|_| old.error.is_none()) else { continue };
-        if made.contains(&old.path) {
+        if !taken.insert(paths::key(&old.path)) {
             continue;
         }
+        let checked = paths::destination(project, &prev_root, &old.path)
+            .and_then(|from| paths::destination(project, root, &old.path).map(|to| (from, to)));
+        let (from, to) = match checked {
+            Ok(pair) => pair,
+            Err(e) => { out.push(failed(&old.path, e)); continue; }
+        };
         let unchanged = if old.preset_id == MOCKUP_PRESET {
             renders.get(&old.asset_id).and_then(|r| hash_file(r).ok()).as_deref() == Some(sha.as_str())
         } else {
@@ -263,8 +356,6 @@ fn complete_from_delivered(project: &Project, plan: &Plan, root: &Path, made: &s
             out.push(old);
             continue;
         }
-        let from = crate::project::resolve_with(&prev_root, &old.path);
-        let to = crate::project::resolve_with(root, &old.path);
         let mut r = old.clone();
         let copied = std::fs::read(&from).map_err(|e| format!("{} : {e}", from.display())).and_then(|bytes| {
             if hash_file(&from).ok().as_deref() != Some(sha.as_str()) {
@@ -288,10 +379,10 @@ fn complete_from_delivered(project: &Project, plan: &Plan, root: &Path, made: &s
 /// and the files), shown with the plan before anything is written.
 pub fn carried_over(project: &Project, plan: &Plan) -> Option<(String, Vec<String>)> {
     let prev = project.data.deliveries.iter().rev().find(|d| d.delivered && d.folder != plan.folder)?;
-    let root = project.deliveries_root().join(&plan.folder);
-    let mut made: std::collections::BTreeSet<String> = plan.outputs.iter().map(|o| o.path.clone()).collect();
-    made.extend(read_manifest_results(&root.join("manifest.json")).into_iter().map(|r| r.path));
-    let files: Vec<String> = complete_from_delivered(project, plan, &root, &made, true).into_iter().map(|r| r.path).collect();
+    let root = paths::root(project, &plan.folder).ok()?;
+    let mut made: BTreeSet<String> = plan.outputs.iter().map(|o| paths::key(&o.path)).collect();
+    made.extend(read_manifest_results(&root.join("manifest.json")).into_iter().map(|r| paths::key(&r.path)));
+    let files: Vec<String> = complete_from_delivered(project, plan, &root, &made, true).into_iter().filter(|r| r.error.is_none()).map(|r| r.path).collect();
     (!files.is_empty()).then(|| (prev.folder.clone(), files))
 }
 
@@ -305,18 +396,22 @@ fn make_one(project: &Project, engines: &Engines, root: &Path, out: &PlannedOutp
         height: None,
         bytes: None,
         sha256: None,
+        treatment: out.treatment,
     };
     if let Some(b) = &out.blocked {
         r.error = Some(b.clone());
         return r;
     }
+    let dest = match paths::destination(project, root, &out.path) {
+        Ok(dest) => dest,
+        Err(e) => { r.error = Some(e); return r; }
+    };
     if out.preset_id == MOCKUP_PRESET {
         let render = crate::mockup::scenes(project)
             .into_iter()
             .filter_map(|(_, _, s)| s.ok())
             .find(|s| s.id == out.asset_id)
             .and_then(|s| s.last_render.map(|rec| project.resolve(&rec.file)));
-        let dest = crate::project::resolve_with(root, &out.path);
         let copied = render.ok_or_else(|| "scène ou rendu introuvable".to_string()).and_then(|src| {
             let bytes = std::fs::read(&src).map_err(|e| format!("{} : {e}", src.display()))?;
             if let Some(dir) = dest.parent() {
@@ -342,10 +437,25 @@ fn make_one(project: &Project, engines: &Engines, root: &Path, out: &PlannedOutp
         r.error = Some("logo ou preset supprimé depuis le plan".into());
         return r;
     };
-    let src = project.resolve(&asset.source);
-    let dest = crate::project::resolve_with(root, &out.path);
+    let master = project.resolve(&asset.source);
+    // A treated vector master is recoloured as SVG first; a raster one after rasterising.
+    let treated = if out.treatment != Treatment::Original && render::master_kind(&master) == Some("vector") {
+        match treated_svg(engines, &master, out.treatment) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                r.error = Some(e);
+                return r;
+            }
+        }
+    } else {
+        None
+    };
+    let src = treated.clone().unwrap_or_else(|| master.clone());
     let made = if preset.format.is_raster() {
-        render::raster_export(engines, &src, preset).and_then(|img| {
+        render::raster_export(engines, &src, preset).and_then(|mut img| {
+            if treated.is_none() {
+                crate::recolor::recolor_image(&mut img, out.treatment);
+            }
             r.width = Some(img.width());
             r.height = Some(img.height());
             render::write_raster(&img, preset, &dest)
@@ -353,6 +463,9 @@ fn make_one(project: &Project, engines: &Engines, root: &Path, out: &PlannedOutp
     } else {
         render::vector_export(engines, &src, preset.format, &dest)
     };
+    if let Some(p) = &treated {
+        let _ = std::fs::remove_file(p);
+    }
     match made {
         Ok(()) => {
             r.bytes = std::fs::metadata(&dest).ok().map(|m| m.len());
@@ -361,6 +474,23 @@ fn make_one(project: &Project, engines: &Engines, root: &Path, out: &PlannedOutp
         Err(e) => r.error = Some(e),
     }
     r
+}
+
+/// The vector master recoloured by `t`, as a temporary SVG (the caller removes it).
+fn treated_svg(engines: &Engines, master: &Path, t: Treatment) -> Result<std::path::PathBuf, String> {
+    let svg = if master.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("svg")) {
+        std::fs::read_to_string(master).map_err(|e| format!("{} : {e}", master.display()))?
+    } else {
+        // Another vector format: Oracle Vector writes it as SVG first.
+        let tmp = render::temp_path("svg");
+        render::vector_export(engines, master, Format::Svg, &tmp)?;
+        let s = std::fs::read_to_string(&tmp).map_err(|e| format!("{} : {e}", tmp.display()));
+        let _ = std::fs::remove_file(&tmp);
+        s?
+    };
+    let out = render::temp_path("svg");
+    std::fs::write(&out, crate::recolor::recolor_svg(&svg, t)).map_err(|e| format!("{} : {e}", out.display()))?;
+    Ok(out)
 }
 
 #[derive(Serialize)]
@@ -439,12 +569,14 @@ fn read_manifest_results(path: &Path) -> Vec<OutputResult> {
         height: Option<u32>,
         bytes: Option<u64>,
         sha256: Option<String>,
+        #[serde(default)]
+        treatment: Treatment,
     }
     let Ok(bytes) = std::fs::read(path) else { return Vec::new() };
     let Ok(prev) = serde_json::from_slice::<Prev>(&bytes) else { return Vec::new() };
     prev.outputs
         .into_iter()
-        .map(|p| OutputResult { path: p.path, asset_id: p.asset_id, preset_id: p.preset_id, error: p.error, width: p.width, height: p.height, bytes: p.bytes, sha256: p.sha256 })
+        .map(|p| OutputResult { path: p.path, asset_id: p.asset_id, preset_id: p.preset_id, error: p.error, width: p.width, height: p.height, bytes: p.bytes, sha256: p.sha256, treatment: p.treatment })
         .collect()
 }
 
@@ -525,10 +657,113 @@ fn write_readme(project: &Project, root: &Path, outputs: &[OutputResult]) -> Res
     write_atomic(&root.join("README.txt"), s.replace('\n', "\r\n").as_bytes())
 }
 
+/// The client's guide to the delivery: which file for which use.
+pub const FILE_GUIDE: &str = "Guide des fichiers.html";
+
+fn html(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// A page the client opens first: what each format and each colour version is for, then every
+/// file, grouped by logo and version, with its size.
+fn write_file_guide(project: &Project, root: &Path, outputs: &[OutputResult]) -> Result<(), String> {
+    let d = &project.data;
+    let ok: Vec<&OutputResult> = outputs.iter().filter(|o| o.error.is_none()).collect();
+    let mut s = String::new();
+    s.push_str("<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+    s.push_str(&format!("<title>{} — guide des fichiers</title>", html(&d.brand_name)));
+    s.push_str("<style>body{font:15px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#1b1a17;background:#fff}h1{font-size:28px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 8px;border-bottom:2px solid #d31c3b;padding-bottom:4px}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:6px 8px;border-bottom:1px solid #e6e3da;vertical-align:top}th{font-weight:600}.dim{color:#6b6860}code{font-size:13px}</style></head><body>");
+    s.push_str(&format!("<h1>{}</h1><p class=\"dim\">Fichiers de marque {} — {}</p>", html(&d.brand_name), html(&d.version), html(&d.client)));
+    s.push_str("<h2>Quel format choisir</h2><table>");
+    let mut formats: Vec<&str> = ok.iter().filter_map(|o| o.path.rsplit('.').next()).collect();
+    formats.sort();
+    formats.dedup();
+    for f in formats {
+        let (use_, note) = match f {
+            "svg" => ("Site web, applications, écrans", "vectoriel : net à toutes les tailles"),
+            "pdf" => ("Imprimeur, documents bureautiques", "vectoriel"),
+            "eps" => ("Imprimeurs et logiciels anciens, enseignes, broderie", "vectoriel"),
+            "ai" => ("Retouche par un graphiste (Illustrator et compatibles)", "vectoriel, modifiable"),
+            "png" => ("Écrans, présentations, réseaux sociaux", "fond transparent"),
+            "webp" => ("Web", "fond transparent, fichier léger"),
+            "jpg" => ("Quand la transparence n'est pas possible", "fond blanc"),
+            _ => ("", ""),
+        };
+        s.push_str(&format!("<tr><th>{}</th><td>{use_}</td><td class=\"dim\">{note}</td></tr>", f.to_uppercase()));
+    }
+    s.push_str("</table>");
+    let mut treatments: Vec<Treatment> = ok.iter().map(|o| o.treatment).collect();
+    treatments.sort();
+    treatments.dedup();
+    if treatments.len() > 1 || treatments.first().is_some_and(|t| !t.is_original()) {
+        s.push_str("<h2>Quelle version de couleur</h2><table>");
+        for t in &treatments {
+            s.push_str(&format!("<tr><th>{}</th><td>{}</td></tr>", t.label_fr(), t.usage_fr()));
+        }
+        s.push_str("</table><p class=\"dim\">Les versions noir, blanc, niveaux de gris et inversée sont calculées à partir du logo couleur, sauf celles dessinées à part par le graphiste.</p>");
+    }
+    s.push_str("<h2>Les fichiers</h2>");
+    let mut by_asset: BTreeMap<(String, Treatment), Vec<&OutputResult>> = BTreeMap::new();
+    for o in &ok {
+        let label = d.assets.iter().find(|a| a.id == o.asset_id).map(|a| if a.label.is_empty() { a.role.label_fr().to_string() } else { a.label.clone() }).unwrap_or_else(|| "Mockups".into());
+        by_asset.entry((label, o.treatment)).or_default().push(o);
+    }
+    for ((label, t), files) in &by_asset {
+        s.push_str(&format!("<p><strong>{}</strong> · {}</p><table>", html(label), t.label_fr()));
+        for f in files {
+            let size = match (f.width, f.height) {
+                (Some(w), Some(h)) => format!("{w} × {h} px"),
+                _ => String::new(),
+            };
+            s.push_str(&format!("<tr><td><code>{}</code></td><td class=\"dim\">{size}</td></tr>", html(&f.path)));
+        }
+        s.push_str("</table>");
+    }
+    if !d.colors.is_empty() {
+        s.push_str("<h2>Couleurs</h2><table>");
+        for c in &d.colors {
+            let cmyk = c.cmyk.as_ref().map(|k| format!("CMJN {} {} {} {}", k.c, k.m, k.y, k.k)).unwrap_or_default();
+            s.push_str(&format!(
+                "<tr><td style=\"width:48px;background:{}\"></td><th>{}</th><td>{}</td><td>{}</td><td>{}</td></tr>",
+                html(&c.hex),
+                html(&c.name),
+                html(&c.hex.to_uppercase()),
+                cmyk,
+                if c.pantone.is_empty() { String::new() } else { format!("Pantone {}", html(&c.pantone)) }
+            ));
+        }
+        s.push_str("</table>");
+    }
+    if !d.fonts.is_empty() {
+        s.push_str("<h2>Typographies</h2><p>");
+        let names: Vec<String> = d.fonts.iter().map(|f| format!("{} ({})", html(&f.family), html(&f.usage))).collect();
+        s.push_str(&names.join(" · "));
+        s.push_str("</p><p class=\"dim\">Les fichiers de police ne sont pas fournis : chacun utilise sa propre licence.</p>");
+    }
+    s.push_str("<p class=\"dim\">manifest.json décrit chaque fichier (source, réglages, empreinte SHA-256).</p></body></html>\n");
+    write_atomic(&root.join(FILE_GUIDE), s.as_bytes())
+}
+
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes).map_err(|e| format!("{} : {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("{} : {e}", path.display()))
+    use std::io::Write;
+    let tmp = path.with_file_name(format!(".oracle-{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)
+            .map_err(|e| format!("{} : {e}", tmp.display()))?;
+        file.write_all(bytes).and_then(|()| file.sync_all()).map_err(|e| e.to_string())?;
+        drop(file);
+        std::fs::rename(&tmp, path).map_err(|e| format!("{} : {e}", path.display()))
+    })();
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
+fn reserved_names() -> BTreeSet<String> {
+    ["manifest.json".into(), "readme.txt".into(), FILE_GUIDE.to_lowercase()].into()
+}
+
+fn failed(path: &str, error: String) -> OutputResult {
+    OutputResult { path: path.into(), asset_id: String::new(), preset_id: String::new(), error: Some(error), width: None, height: None, bytes: None, sha256: None, treatment: Treatment::Original }
 }
 
 /// What a regeneration would change: masters modified since the last export, and the outputs that

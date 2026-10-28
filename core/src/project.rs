@@ -146,8 +146,11 @@ pub fn resolve_with(dir: &Path, stored: &str) -> PathBuf {
 
 /// Brings an older `brand.json` up to the current schema. Each step is tested.
 fn migrate(value: &mut serde_json::Value) -> Result<(), String> {
-    let version = value.get("schemaVersion").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32;
-    if version > SCHEMA_VERSION {
+    let version = match value.get("schemaVersion") {
+        None => 0,
+        Some(v) => v.as_u64().ok_or("schemaVersion doit être un entier positif")?,
+    };
+    if version > u64::from(SCHEMA_VERSION) {
         return Err(format!(
             "ce projet a été enregistré par une version plus récente d'Oracle (schéma {version}, celle-ci lit jusqu'au {SCHEMA_VERSION}) : il n'est pas modifié"
         ));
@@ -160,6 +163,10 @@ fn migrate(value: &mut serde_json::Value) -> Result<(), String> {
         }
         obj.entry("projectId").or_insert_with(|| serde_json::Value::String(uuid::Uuid::new_v4().to_string()));
         obj.insert("schemaVersion".into(), serde_json::Value::from(1));
+    }
+    // New guide content is missing/unreviewed, never inferred as approved from a legacy project.
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("schemaVersion".into(), serde_json::Value::from(SCHEMA_VERSION));
     }
     Ok(())
 }
@@ -271,7 +278,7 @@ mod tests {
         std::fs::write(tmp.path().join(FILE_NAME), br#"{"name":"Ancienne marque"}"#).unwrap();
         let p = Project::open(tmp.path()).unwrap();
         assert_eq!(p.data.brand_name, "Ancienne marque");
-        assert_eq!(p.data.schema_version, 1);
+        assert_eq!(p.data.schema_version, SCHEMA_VERSION);
         std::fs::write(tmp.path().join(FILE_NAME), br#"{"schemaVersion":99,"projectId":"x","brandName":"Futur"}"#).unwrap();
         assert!(Project::open(tmp.path()).unwrap_err().contains("plus récente"));
     }
